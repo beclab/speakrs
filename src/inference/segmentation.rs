@@ -116,8 +116,7 @@ impl SegmentationModel {
 
         let (session, session_elapsed) = timed!(Self::build_session(model_path, mode)?);
         let (primary_batched_session, primary_batched_elapsed) = timed!(
-            batched_model_path(model_path, PRIMARY_BATCH_SIZE)
-                .filter(|path| path.exists())
+            primary_batched_path(model_path, mode)
                 .map(|path| Self::build_session(&path, mode))
                 .transpose()?
         );
@@ -256,9 +255,88 @@ impl SegmentationModel {
     }
 }
 
+/// The batched segmentation model this mode should load, if any.
+///
+/// 🔴 None on OpenVINO, and the decision belongs here rather than only in `required_files`.
+/// That list is behind the `online` feature, so a consumer that downloads weights some other
+/// way -- which is every consumer that turns default features off -- has the whole repository
+/// in its cache and arrives here with the file present. Fixing only the download list would
+/// have fixed nothing for them, this crate's own engine included.
+///
+/// What it avoids: OpenVINO's GPU plugin generates an LSTM kernel referencing
+/// OUTPUT1_GET_INDEX and OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects
+/// the program, and the session fails to build -- taking the pipeline with it. Measured on
+/// Arrow Lake-S / OpenVINO 2025.4.1, on models verified bit-identical to their originals on
+/// CPU first, the trigger is a static sequence length rather than the batch: batch 1 made
+/// static fails the same way, batch 32 with only its batch dimension made dynamic still
+/// fails, and batch 32 with a dynamic sequence length compiles and runs. The unbatched model
+/// survives because its sample count is dynamic, not because it is smaller.
+fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBuf> {
+    batched_model_path(model_path, PRIMARY_BATCH_SIZE)
+        .filter(|_| !mode.is_openvino())
+        .filter(|path| path.exists())
+}
+
 fn batched_model_path(model_path: &Path, batch_size: usize) -> Option<PathBuf> {
     let path = model_path;
     let file_name = path.file_name()?.to_str()?;
     let stem = file_name.strip_suffix(".onnx")?;
     Some(path.with_file_name(format!("{stem}-b{batch_size}.onnx")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A directory holding an empty file named like the batched segmentation model. The
+    /// decision under test reads the name and whether the path exists, never the bytes.
+    fn models_dir_with_batched(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("speakrs-seg-batched-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(format!("segmentation-3.0-b{PRIMARY_BATCH_SIZE}.onnx")),
+            b"",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn openvino_declines_the_batched_segmentation_model_even_when_it_is_present() {
+        let dir = models_dir_with_batched("openvino");
+        let model = dir.join("segmentation-3.0.onnx");
+
+        // The control: every other accelerated mode takes it, so a None below is the mode
+        // talking and not a missing file or a mangled name.
+        assert!(primary_batched_path(&model, ExecutionMode::Cuda).is_some());
+        assert!(primary_batched_path(&model, ExecutionMode::MiGraphX).is_some());
+
+        assert_eq!(
+            primary_batched_path(&model, ExecutionMode::OpenVino { device_type: "GPU" }),
+            None,
+        );
+        // The device does not enter into it: the CPU device runs the same plugin stack.
+        assert_eq!(
+            primary_batched_path(&model, ExecutionMode::OpenVino { device_type: "CPU" }),
+            None,
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_batched_model_is_still_none_for_everyone() {
+        let dir = std::env::temp_dir().join(format!("speakrs-seg-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("segmentation-3.0.onnx");
+
+        assert_eq!(primary_batched_path(&model, ExecutionMode::Cuda), None);
+        assert_eq!(
+            primary_batched_path(&model, ExecutionMode::OpenVino { device_type: "GPU" }),
+            None,
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
