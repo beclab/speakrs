@@ -199,7 +199,21 @@ fn required_files(mode: ExecutionMode) -> Vec<String> {
             files.push("wespeaker-multimask-tail.onnx".to_string());
             files.push("wespeaker-multimask-tail-b32.onnx".to_string());
             // batched seg/emb models
-            files.push("segmentation-3.0-b32.onnx".to_string());
+            //
+            // Not the batched segmentation model on OpenVINO. Its GPU plugin generates an
+            // LSTM kernel referencing OUTPUT1_GET_INDEX and OUTPUT2_GET_INDEX without
+            // defining them, and the OpenCL compiler rejects it, so the session never
+            // builds. Measured on Arrow Lake-S with OpenVINO 2025.4.1: the trigger is a
+            // static sequence length, not the batch -- batch 1 made static fails the same
+            // way, batch 32 with only the batch dimension made dynamic still fails, and
+            // batch 32 with a dynamic sequence length compiles and runs. So the unbatched
+            // model here is not a smaller case that happens to work, it is the one whose
+            // sample count is dynamic. Every call site treats this session as optional and
+            // falls back to one window at a time, which costs throughput on clips longer
+            // than PRIMARY_BATCH_SIZE windows and nothing on shorter ones.
+            if !mode.is_openvino() {
+                files.push("segmentation-3.0-b32.onnx".to_string());
+            }
             files.push("wespeaker-voxceleb-resnet34-b64.onnx".to_string());
         }
         ExecutionMode::CoreMl => {
@@ -259,10 +273,27 @@ mod tests {
     }
 
     #[test]
-    fn openvino_required_files_match_the_other_accelerated_onnx_paths() {
+    fn openvino_required_files_are_the_accelerated_set_minus_batched_segmentation() {
         let openvino = required_files(ExecutionMode::OpenVino { device_type: "GPU" });
         let migraphx = required_files(ExecutionMode::MiGraphX);
-        assert_eq!(openvino, migraphx);
+
+        // Named rather than derived by subtraction, so that a second file dropped from the
+        // OpenVINO set later cannot pass this test by accident.
+        assert!(!openvino.contains(&"segmentation-3.0-b32.onnx".to_string()));
+        assert!(migraphx.contains(&"segmentation-3.0-b32.onnx".to_string()));
+
+        // The unbatched segmentation model is what the fallback runs on; without it the
+        // pipeline has no segmentation at all, which is a worse failure than a slow one.
+        assert!(openvino.contains(&"segmentation-3.0.onnx".to_string()));
+
+        // Everything else still matches, including the batched embedding models: the kernel
+        // this avoids is an LSTM one, and only segmentation has an LSTM.
+        let expected: Vec<String> = migraphx
+            .iter()
+            .filter(|f| *f != "segmentation-3.0-b32.onnx")
+            .cloned()
+            .collect();
+        assert_eq!(openvino, expected);
     }
 
     #[test]
