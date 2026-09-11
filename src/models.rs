@@ -188,7 +188,10 @@ fn required_files(mode: ExecutionMode) -> Vec<String> {
         ExecutionMode::Cpu => {
             files.extend(ONNX_FILES.iter().map(|s| s.to_string()));
         }
-        ExecutionMode::Cuda | ExecutionMode::CudaFast | ExecutionMode::MiGraphX => {
+        ExecutionMode::Cuda
+        | ExecutionMode::CudaFast
+        | ExecutionMode::MiGraphX
+        | ExecutionMode::OpenVino { .. } => {
             files.extend(ONNX_FILES.iter().map(|s| s.to_string()));
             // split models for multi-mask embedding (CPU fbank + GPU multi-mask)
             files.push("wespeaker-fbank.onnx".to_string());
@@ -253,6 +256,13 @@ mod tests {
         assert!(files.contains(&"segmentation-3.0-w8a16.mlmodelc/model.mil".to_string()));
         assert!(files.contains(&"segmentation-3.0-b64-w8a16.mlmodelc/model.mil".to_string()));
         assert!(files.contains(&"wespeaker-chunk-emb-s25-w56.mlmodelc/model.mil".to_string()));
+    }
+
+    #[test]
+    fn openvino_required_files_match_the_other_accelerated_onnx_paths() {
+        let openvino = required_files(ExecutionMode::OpenVino { device_type: "GPU" });
+        let migraphx = required_files(ExecutionMode::MiGraphX);
+        assert_eq!(openvino, migraphx);
     }
 
     #[test]

@@ -300,6 +300,7 @@ impl<'a> PipelineRunner<'a> {
                 | ExecutionMode::Cuda
                 | ExecutionMode::CudaFast
                 | ExecutionMode::MiGraphX
+                | ExecutionMode::OpenVino { .. }
         ) {
             InferencePath::Concurrent
         } else {

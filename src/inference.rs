@@ -63,6 +63,19 @@ pub enum ExecutionMode {
     /// AMD GPU via ONNX Runtime's MIGraphX execution provider
     #[cfg_attr(docsrs, doc(cfg(feature = "migraphx")))]
     MiGraphX,
+    /// Intel CPU, integrated GPU, discrete GPU or NPU via ONNX Runtime's OpenVINO
+    /// execution provider
+    ///
+    /// `device_type` reaches OpenVINO verbatim: `CPU`, `GPU`, `GPU.0`, `GPU.1`, `NPU`, or a
+    /// heterogeneous combination such as `HETERO:NPU,GPU`. It is a field rather than one
+    /// variant per device because a machine carrying both an integrated and a discrete Intel
+    /// GPU does not guarantee which of them is `GPU.0` -- only the caller, on the machine, can
+    /// resolve that.
+    #[cfg_attr(docsrs, doc(cfg(feature = "openvino")))]
+    OpenVino {
+        /// OpenVINO device string, passed through unchanged
+        device_type: &'static str,
+    },
 }
 
 impl ExecutionMode {
@@ -79,6 +92,11 @@ impl ExecutionMode {
     /// Returns true when this mode uses the MIGraphX execution provider
     pub const fn is_migraphx(self) -> bool {
         matches!(self, Self::MiGraphX)
+    }
+
+    /// Returns true when this mode uses the OpenVINO execution provider
+    pub const fn is_openvino(self) -> bool {
+        matches!(self, Self::OpenVino { .. })
     }
 
     pub(crate) fn validate(self) -> Result<(), ExecutionModeError> {
@@ -116,6 +134,21 @@ impl ExecutionMode {
             }
         }
 
+        if self.is_openvino() {
+            #[cfg(feature = "openvino")]
+            {
+                return Ok(());
+            }
+
+            #[cfg(not(feature = "openvino"))]
+            {
+                return Err(ExecutionModeError {
+                    mode: self,
+                    feature: "openvino",
+                });
+            }
+        }
+
         debug_assert!(self.is_cuda(), "unsupported execution mode: {self:?}");
 
         #[cfg(feature = "cuda")]
@@ -141,6 +174,7 @@ impl ExecutionMode {
             Self::Cuda => "cuda",
             Self::CudaFast => "cuda-fast",
             Self::MiGraphX => "migraphx",
+            Self::OpenVino { .. } => "openvino",
         }
     }
 }
@@ -307,6 +341,21 @@ pub fn with_execution_mode(
             #[cfg(not(feature = "migraphx"))]
             {
                 unreachable!("mode validation rejects MIGraphX mode without the `migraphx` feature")
+            }
+        }
+        ExecutionMode::OpenVino { device_type } => {
+            #[cfg(feature = "openvino")]
+            {
+                Ok(builder.with_execution_providers([ep::OpenVINO::default()
+                    .with_device_type(device_type)
+                    .build()
+                    .error_on_failure()])?)
+            }
+
+            #[cfg(not(feature = "openvino"))]
+            {
+                let _ = device_type;
+                unreachable!("mode validation rejects OpenVINO mode without the `openvino` feature")
             }
         }
     }
@@ -483,7 +532,8 @@ mod tests {
     #[cfg(any(
         not(feature = "coreml"),
         not(feature = "cuda"),
-        not(feature = "migraphx")
+        not(feature = "migraphx"),
+        not(feature = "openvino")
     ))]
     use super::ExecutionMode;
     #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
@@ -525,6 +575,18 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "migraphx requires the `migraphx` Cargo feature"
+        );
+    }
+
+    #[cfg(not(feature = "openvino"))]
+    #[test]
+    fn openvino_mode_requires_feature() {
+        let error = ExecutionMode::OpenVino { device_type: "GPU" }
+            .validate()
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "openvino requires the `openvino` Cargo feature"
         );
     }
 

@@ -24,6 +24,7 @@ online = ["dep:hf-hub", "hf-hub/ureq", "hf-hub/native-tls"]
 coreml = ["dep:objc2", "dep:objc2-core-ml", "dep:objc2-foundation", "dep:block2"]
 cuda = ["ort/cuda"]
 migraphx = ["ort/migraphx"]
+openvino = ["ort/openvino"]
 load-dynamic = ["ort/load-dynamic", "dep:libloading"]
 
 intel-mkl = ["dep:ndarray-linalg-mkl"]
@@ -33,7 +34,7 @@ openblas-system = ["dep:ndarray-linalg-system"]
 _metrics = []
 
 [package.metadata.docs.rs]
-features = ["cuda", "migraphx", "load-dynamic", "_metrics"]
+features = ["cuda", "migraphx", "openvino", "load-dynamic", "_metrics"]
 
 [dependencies]
 hf-hub = { version = "0.5", optional = true, default-features = false }
