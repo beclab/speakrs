@@ -257,11 +257,12 @@ impl SegmentationModel {
 
 /// The batched segmentation model this mode should load, if any.
 ///
-/// 🔴 None on OpenVINO, and the decision belongs here rather than only in `required_files`.
-/// That list is behind the `online` feature, so a consumer that downloads weights some other
-/// way -- which is every consumer that turns default features off -- has the whole repository
-/// in its cache and arrives here with the file present. Fixing only the download list would
-/// have fixed nothing for them, this crate's own engine included.
+/// 🔴 On OpenVINO this is a different file, not the stock `-b32` export, and the decision
+/// belongs here rather than only in `required_files`. That list is behind the `online`
+/// feature, so a consumer that downloads weights some other way -- which is every consumer
+/// that turns default features off -- has the whole repository in its cache and arrives here
+/// with the stock file present. Deciding this in the download list would decide nothing for
+/// them, this crate's own engine included.
 ///
 /// What it avoids: OpenVINO's GPU plugin generates an LSTM kernel referencing
 /// OUTPUT1_GET_INDEX and OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects
@@ -272,9 +273,28 @@ impl SegmentationModel {
 /// fails, and batch 32 with a dynamic sequence length compiles and runs. The unbatched model
 /// survives because its sample count is dynamic, not because it is smaller.
 fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBuf> {
-    batched_model_path(model_path, PRIMARY_BATCH_SIZE)
-        .filter(|_| !mode.is_openvino())
-        .filter(|path| path.exists())
+    if mode.is_openvino() {
+        return dynamic_sequence_batched_path(model_path).filter(|path| path.exists());
+    }
+    batched_model_path(model_path, PRIMARY_BATCH_SIZE).filter(|path| path.exists())
+}
+
+/// The batched segmentation model OpenVINO can compile, named apart from the stock one.
+///
+/// 🔴 A different filename rather than the same one, because the two are not interchangeable
+/// and the stock one is what crashes. Sharing the name would mean a deployment without the
+/// prepared model silently picking up the static graph and failing to build a session -- the
+/// failure this whole path exists to avoid. Absent, batching is simply off, which is where
+/// OpenVINO stood before this and is the safe direction to fall.
+///
+/// The file is the stock `-b32` export with its sample dimension made dynamic, which is the
+/// one edit that matters and is numerically identity: verified bit-for-bit against the
+/// original on CPU before either was trusted. Producing it needs an ONNX library, so it is
+/// generated where one is available rather than here.
+fn dynamic_sequence_batched_path(model_path: &Path) -> Option<PathBuf> {
+    let file_name = model_path.file_name()?.to_str()?;
+    let stem = file_name.strip_suffix(".onnx")?;
+    Some(model_path.with_file_name(format!("{stem}-b{PRIMARY_BATCH_SIZE}-dynseq.onnx")))
 }
 
 fn batched_model_path(model_path: &Path, batch_size: usize) -> Option<PathBuf> {
@@ -303,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn openvino_declines_the_batched_segmentation_model_even_when_it_is_present() {
+    fn openvino_never_takes_the_stock_batched_model() {
         let dir = models_dir_with_batched("openvino");
         let model = dir.join("segmentation-3.0.onnx");
 
@@ -312,6 +332,8 @@ mod tests {
         assert!(primary_batched_path(&model, ExecutionMode::Cuda).is_some());
         assert!(primary_batched_path(&model, ExecutionMode::MiGraphX).is_some());
 
+        // The stock file is present and must still be refused: it is the one that cannot be
+        // compiled, so picking it up would be the crash this path exists to avoid.
         assert_eq!(
             primary_batched_path(&model, ExecutionMode::OpenVino { device_type: "GPU" }),
             None,
@@ -320,6 +342,32 @@ mod tests {
         assert_eq!(
             primary_batched_path(&model, ExecutionMode::OpenVino { device_type: "CPU" }),
             None,
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn openvino_takes_the_prepared_model_when_it_is_there() {
+        let dir = models_dir_with_batched("openvino-dynseq");
+        let model = dir.join("segmentation-3.0.onnx");
+        let prepared = dir.join(format!(
+            "segmentation-3.0-b{PRIMARY_BATCH_SIZE}-dynseq.onnx"
+        ));
+        std::fs::write(&prepared, b"").unwrap();
+
+        assert_eq!(
+            primary_batched_path(&model, ExecutionMode::OpenVino { device_type: "GPU" }),
+            Some(prepared),
+        );
+
+        // And nobody else goes looking for it: the stock export is what they can compile.
+        let cuda = primary_batched_path(&model, ExecutionMode::Cuda).unwrap();
+        assert!(
+            cuda.to_str()
+                .unwrap()
+                .ends_with(&format!("-b{PRIMARY_BATCH_SIZE}.onnx")),
+            "cuda took {cuda:?}"
         );
 
         std::fs::remove_dir_all(&dir).ok();
