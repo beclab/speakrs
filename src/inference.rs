@@ -304,6 +304,26 @@ pub fn with_execution_mode(
     builder: SessionBuilder,
     mode: ExecutionMode,
 ) -> Result<SessionBuilder, ort::Error> {
+    with_execution_mode_precision(builder, mode, None)
+}
+
+/// As `with_execution_mode`, with an OpenVINO inference precision for this one session.
+///
+/// 🔴 Per session, not per pipeline, because no single precision works for the whole of it.
+/// Measured on Arc Pro B70 (Battlemage, driver 26.22.38646.4, OpenVINO 2025.4.1): the
+/// embedding models return CL_OUT_OF_RESOURCES from clFinish at the default precision and
+/// run correctly at FP32, while segmentation is the other way round -- FP32 takes it from
+/// 6.0 s to 6.2 s per window and stops the batched graph compiling at all. The integrated
+/// part needs none of this; it runs everything at the default.
+///
+/// `precision` is ignored by every mode but OpenVINO, which is why it is a parameter here
+/// rather than a field on the mode: it describes how one session is built, not what the
+/// pipeline was asked to run on.
+pub fn with_execution_mode_precision(
+    builder: SessionBuilder,
+    mode: ExecutionMode,
+    precision: Option<&str>,
+) -> Result<SessionBuilder, ort::Error> {
     mode.validate()?;
 
     match mode {
@@ -346,15 +366,17 @@ pub fn with_execution_mode(
         ExecutionMode::OpenVino { device_type } => {
             #[cfg(feature = "openvino")]
             {
-                Ok(builder.with_execution_providers([ep::OpenVINO::default()
-                    .with_device_type(device_type)
-                    .build()
-                    .error_on_failure()])?)
+                let provider = ep::OpenVINO::default().with_device_type(device_type);
+                let provider = match precision {
+                    Some(precision) => provider.with_precision(precision),
+                    None => provider,
+                };
+                Ok(builder.with_execution_providers([provider.build().error_on_failure()])?)
             }
 
             #[cfg(not(feature = "openvino"))]
             {
-                let _ = device_type;
+                let _ = (device_type, precision);
                 unreachable!("mode validation rejects OpenVINO mode without the `openvino` feature")
             }
         }

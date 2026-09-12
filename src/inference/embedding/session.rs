@@ -2,9 +2,14 @@ use std::path::Path;
 
 use ort::session::Session;
 
-use crate::inference::with_execution_mode;
+use crate::inference::{with_execution_mode, with_execution_mode_precision};
 
 use super::{EmbeddingModel, ExecutionMode};
+
+/// FP32 for the embedding models on OpenVINO, nothing for anyone else.
+fn openvino_precision(mode: ExecutionMode) -> Option<&'static str> {
+    mode.is_openvino().then_some("FP32")
+}
 
 impl EmbeddingModel {
     pub(super) fn build_session(
@@ -28,7 +33,12 @@ impl EmbeddingModel {
             if cuda_graph && matches!(mode, ExecutionMode::Cuda | ExecutionMode::CudaFast) {
                 Self::with_cuda_graph_mode(builder)?
             } else {
-                with_execution_mode(builder, mode)?
+                // 🔴 FP32 here and nowhere else. At the default precision these models fail on
+                // a discrete Intel GPU -- CL_OUT_OF_RESOURCES out of clFinish, measured on Arc
+                // Pro B70 -- and they run correctly at FP32. Segmentation must NOT be given the
+                // same treatment: FP32 makes it slower there and stops its batched graph
+                // compiling. Every other mode ignores the argument.
+                with_execution_mode_precision(builder, mode, openvino_precision(mode))?
             };
         builder.commit_from_file(model_path)
     }
@@ -86,5 +96,33 @@ impl EmbeddingModel {
         mode: ExecutionMode,
     ) -> Result<Session, ort::Error> {
         Self::build_session(model_path, Self::single_execution_mode(mode))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_openvino_asks_for_a_precision() {
+        // The whole point is that this is not the pipeline's precision: segmentation goes
+        // through the same provider on the same device at the default, and breaks at FP32.
+        assert_eq!(
+            openvino_precision(ExecutionMode::OpenVino { device_type: "GPU" }),
+            Some("FP32")
+        );
+        assert_eq!(
+            openvino_precision(ExecutionMode::OpenVino { device_type: "CPU" }),
+            Some("FP32")
+        );
+
+        for mode in [
+            ExecutionMode::Cpu,
+            ExecutionMode::Cuda,
+            ExecutionMode::CudaFast,
+            ExecutionMode::MiGraphX,
+        ] {
+            assert_eq!(openvino_precision(mode), None, "{mode:?} must be untouched");
+        }
     }
 }
