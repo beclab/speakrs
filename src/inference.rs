@@ -1,6 +1,10 @@
 pub(crate) mod embedding;
 pub(crate) mod segmentation;
 
+/// The file name OpenVINO looks for when it batches segmentation, re-exported because the
+/// module itself is crate-private and the name has to be reachable by whoever writes the file.
+pub use segmentation::batched_segmentation_file_name;
+
 #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
 use std::ffi::CStr;
 use std::fmt;

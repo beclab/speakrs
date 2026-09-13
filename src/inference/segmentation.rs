@@ -291,10 +291,23 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
 /// one edit that matters and is numerically identity: verified bit-for-bit against the
 /// original on CPU before either was trusted. Producing it needs an ONNX library, so it is
 /// generated where one is available rather than here.
+/// The file name OpenVINO looks for when it batches segmentation.
+///
+/// Public because whoever provisions the models has to write this exact name, and it is built
+/// from PRIMARY_BATCH_SIZE rather than spelled out. Two consumers had already spelled it out
+/// themselves -- a shell that prepares the file and a binary that reports whether it is there
+/// -- so a change to that constant would have made both of them quietly wrong, in a direction
+/// whose only symptom is batching being off.
+pub fn batched_segmentation_file_name() -> String {
+    format!("segmentation-3.0-b{PRIMARY_BATCH_SIZE}-dynseq.onnx")
+}
+
 fn dynamic_sequence_batched_path(model_path: &Path) -> Option<PathBuf> {
-    let file_name = model_path.file_name()?.to_str()?;
-    let stem = file_name.strip_suffix(".onnx")?;
-    Some(model_path.with_file_name(format!("{stem}-b{PRIMARY_BATCH_SIZE}-dynseq.onnx")))
+    // The name is fixed rather than derived from what was passed, so that the one string a
+    // provisioning step has to produce has exactly one definition. The stem is still checked,
+    // because a caller handing this something that is not a model should get None.
+    model_path.file_name()?.to_str()?.strip_suffix(".onnx")?;
+    Some(model_path.with_file_name(batched_segmentation_file_name()))
 }
 
 fn batched_model_path(model_path: &Path, batch_size: usize) -> Option<PathBuf> {
