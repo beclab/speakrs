@@ -200,20 +200,15 @@ fn required_files(mode: ExecutionMode) -> Vec<String> {
             files.push("wespeaker-multimask-tail-b32.onnx".to_string());
             // batched seg/emb models
             //
-            // Not the batched segmentation model on OpenVINO. Its GPU plugin generates an
-            // LSTM kernel referencing OUTPUT1_GET_INDEX and OUTPUT2_GET_INDEX without
-            // defining them, and the OpenCL compiler rejects it, so the session never
-            // builds. Measured on Arrow Lake-S with OpenVINO 2025.4.1: the trigger is a
-            // static sequence length, not the batch -- batch 1 made static fails the same
-            // way, batch 32 with only the batch dimension made dynamic still fails, and
-            // batch 32 with a dynamic sequence length compiles and runs. So the unbatched
-            // model here is not a smaller case that happens to work, it is the one whose
-            // sample count is dynamic. Every call site treats this session as optional and
-            // falls back to one window at a time, which costs throughput on clips longer
-            // than PRIMARY_BATCH_SIZE windows and nothing on shorter ones.
-            if !mode.is_openvino() {
-                files.push("segmentation-3.0-b32.onnx".to_string());
-            }
+            // Downloaded on OpenVINO too, and not because OpenVINO loads it -- it cannot.
+            // Its GPU plugin generates an LSTM kernel referencing OUTPUT1_GET_INDEX and
+            // OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects the
+            // program, and the session never builds. It is here because it is the source the
+            // model OpenVINO does load is derived from: `-b32-dynseq`, the same export with
+            // its sample dimension made dynamic, which is what the load site looks for. Drop
+            // this file from the list and that derivative cannot be produced at all, so
+            // batching is off with nothing saying why.
+            files.push("segmentation-3.0-b32.onnx".to_string());
             files.push("wespeaker-voxceleb-resnet34-b64.onnx".to_string());
         }
         ExecutionMode::CoreMl => {
@@ -273,27 +268,19 @@ mod tests {
     }
 
     #[test]
-    fn openvino_required_files_are_the_accelerated_set_minus_batched_segmentation() {
+    fn openvino_required_files_are_the_accelerated_set() {
         let openvino = required_files(ExecutionMode::OpenVino { device_type: "GPU" });
-        let migraphx = required_files(ExecutionMode::MiGraphX);
 
-        // Named rather than derived by subtraction, so that a second file dropped from the
-        // OpenVINO set later cannot pass this test by accident.
-        assert!(!openvino.contains(&"segmentation-3.0-b32.onnx".to_string()));
-        assert!(migraphx.contains(&"segmentation-3.0-b32.onnx".to_string()));
-
-        // The unbatched segmentation model is what the fallback runs on; without it the
-        // pipeline has no segmentation at all, which is a worse failure than a slow one.
+        // Named rather than only compared as a whole, because this one file is the one a
+        // reader expects to be missing: OpenVINO cannot compile it. It is fetched anyway --
+        // it is what the `-dynseq` derivative the load site looks for is made from, and
+        // without it that derivative cannot exist, so batching would be off for good.
+        assert!(openvino.contains(&"segmentation-3.0-b32.onnx".to_string()));
         assert!(openvino.contains(&"segmentation-3.0.onnx".to_string()));
 
-        // Everything else still matches, including the batched embedding models: the kernel
-        // this avoids is an LSTM one, and only segmentation has an LSTM.
-        let expected: Vec<String> = migraphx
-            .iter()
-            .filter(|f| *f != "segmentation-3.0-b32.onnx")
-            .cloned()
-            .collect();
-        assert_eq!(openvino, expected);
+        // And no other divergence has crept in: the kernel OpenVINO trips over is an LSTM
+        // one, only segmentation has an LSTM, and that is handled where sessions are built.
+        assert_eq!(openvino, required_files(ExecutionMode::MiGraphX));
     }
 
     #[test]

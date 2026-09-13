@@ -33,7 +33,7 @@ impl EmbeddingModel {
             if cuda_graph && matches!(mode, ExecutionMode::Cuda | ExecutionMode::CudaFast) {
                 Self::with_cuda_graph_mode(builder)?
             } else {
-                // 🔴 FP32 here and nowhere else. At the default precision these models fail on
+                // FP32 here and nowhere else. At the default precision these models fail on
                 // a discrete Intel GPU -- CL_OUT_OF_RESOURCES out of clFinish, measured on Arc
                 // Pro B70 -- and they run correctly at FP32. Segmentation must NOT be given the
                 // same treatment: FP32 makes it slower there and stops its batched graph

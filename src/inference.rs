@@ -309,7 +309,7 @@ pub fn with_execution_mode(
 
 /// As `with_execution_mode`, with an OpenVINO inference precision for this one session.
 ///
-/// 🔴 Per session, not per pipeline, because no single precision works for the whole of it.
+/// Per session, not per pipeline, because no single precision works for the whole of it.
 /// Measured on Arc Pro B70 (Battlemage, driver 26.22.38646.4, OpenVINO 2025.4.1): the
 /// embedding models return CL_OUT_OF_RESOURCES from clFinish at the default precision and
 /// run correctly at FP32, while segmentation is the other way round -- FP32 takes it from

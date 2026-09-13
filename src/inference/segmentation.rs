@@ -257,7 +257,7 @@ impl SegmentationModel {
 
 /// The batched segmentation model this mode should load, if any.
 ///
-/// 🔴 On OpenVINO this is a different file, not the stock `-b32` export, and the decision
+/// On OpenVINO this is a different file, not the stock `-b32` export, and the decision
 /// belongs here rather than only in `required_files`. That list is behind the `online`
 /// feature, so a consumer that downloads weights some other way -- which is every consumer
 /// that turns default features off -- has the whole repository in its cache and arrives here
@@ -281,7 +281,7 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
 
 /// The batched segmentation model OpenVINO can compile, named apart from the stock one.
 ///
-/// 🔴 A different filename rather than the same one, because the two are not interchangeable
+/// A different filename rather than the same one, because the two are not interchangeable
 /// and the stock one is what crashes. Sharing the name would mean a deployment without the
 /// prepared model silently picking up the static graph and failing to build a session -- the
 /// failure this whole path exists to avoid. Absent, batching is simply off, which is where
