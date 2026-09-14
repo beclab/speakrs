@@ -136,6 +136,11 @@ impl SegmentationModel {
                 // onnx's checker and that the GPU plugin then refuses. Propagating that
                 // failure takes down every install on the next weights revision, for a
                 // feature whose absence costs speed and nothing else.
+                //
+                // Not applied to the embedding loader, which builds its own optional batched
+                // sessions the old way. Those exports ship with the weights, so one that is
+                // present and will not build is a damaged download rather than a file a
+                // consumer wrote, and failing on it says so where falling back would not.
                 match Self::build_session(&path, mode) {
                     Ok(session) => Some(session),
                     Err(error) => {
