@@ -6,6 +6,7 @@ use ort::session::Session;
 #[cfg(feature = "coreml")]
 use crate::inference::coreml::{CachedInputShape, SharedCoreMlModel};
 use crate::inference::{ExecutionMode, ModelLoadError, ensure_ort_ready, with_execution_mode};
+use crate::models::SEGMENTATION_ONNX;
 #[cfg(feature = "coreml")]
 mod native;
 #[cfg(feature = "coreml")]
@@ -279,6 +280,20 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
     batched_model_path(model_path, PRIMARY_BATCH_SIZE).filter(|path| path.exists())
 }
 
+/// The file name OpenVINO looks for when it batches segmentation.
+///
+/// Public because whoever provisions the models has to write this exact name, and it is built
+/// from SEGMENTATION_ONNX and PRIMARY_BATCH_SIZE rather than spelled out. Two consumers had
+/// already spelled it out themselves -- a shell that prepares the file and a binary that
+/// reports whether it is there -- so a change to either constant would have made both of them
+/// quietly wrong, in a direction whose only symptom is batching being off.
+pub fn batched_segmentation_file_name() -> String {
+    let stem = SEGMENTATION_ONNX
+        .strip_suffix(".onnx")
+        .expect("SEGMENTATION_ONNX names an .onnx file");
+    format!("{stem}-b{PRIMARY_BATCH_SIZE}-dynseq.onnx")
+}
+
 /// The batched segmentation model OpenVINO can compile, named apart from the stock one.
 ///
 /// A different filename rather than the same one, because the two are not interchangeable
@@ -291,17 +306,6 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
 /// one edit that matters and is numerically identity: verified bit-for-bit against the
 /// original on CPU before either was trusted. Producing it needs an ONNX library, so it is
 /// generated where one is available rather than here.
-/// The file name OpenVINO looks for when it batches segmentation.
-///
-/// Public because whoever provisions the models has to write this exact name, and it is built
-/// from PRIMARY_BATCH_SIZE rather than spelled out. Two consumers had already spelled it out
-/// themselves -- a shell that prepares the file and a binary that reports whether it is there
-/// -- so a change to that constant would have made both of them quietly wrong, in a direction
-/// whose only symptom is batching being off.
-pub fn batched_segmentation_file_name() -> String {
-    format!("segmentation-3.0-b{PRIMARY_BATCH_SIZE}-dynseq.onnx")
-}
-
 fn dynamic_sequence_batched_path(model_path: &Path) -> Option<PathBuf> {
     // The name is fixed rather than derived from what was passed, so that the one string a
     // provisioning step has to produce has exactly one definition. The stem is still checked,
@@ -333,6 +337,18 @@ mod tests {
         )
         .unwrap();
         dir
+    }
+
+    /// The name the other two consumers produce for the current export. Neither spells it:
+    /// the shell derives it from the batched export it finds in the cache, the engine asks
+    /// this function -- so this pins what all three agree on today, and a change to either
+    /// constant shows up here rather than as batching silently off.
+    #[test]
+    fn the_prepared_model_is_named_after_the_export_and_the_batch() {
+        assert_eq!(
+            batched_segmentation_file_name(),
+            "segmentation-3.0-b32-dynseq.onnx"
+        );
     }
 
     #[test]

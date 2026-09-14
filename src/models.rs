@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "online")]
 use crate::inference::ExecutionMode;
 
-const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
+pub(crate) const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
 const EMBEDDING_ONNX: &str = "wespeaker-voxceleb-resnet34.onnx";
 
 /// Resolved model paths for the speakrs pipeline
