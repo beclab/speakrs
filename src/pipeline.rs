@@ -150,6 +150,15 @@ impl OwnedDiarizationPipeline {
         PipelineBuilder::from_dir(models_dir, mode).build()
     }
 
+    /// Whether segmentation runs batched in this pipeline
+    ///
+    /// Exposed because the batched model is provisioned outside this crate -- the caller
+    /// writes the file the load path looks for -- so the caller is also the one that reports
+    /// whether it took. Reading that off the file it wrote answers a different question.
+    pub fn segmentation_is_batched(&self) -> bool {
+        self.seg_model.is_batched()
+    }
+
     /// Build from a resolved [`ModelBundle`](crate::models::ModelBundle) using default config
     pub fn from_bundle(
         bundle: crate::models::ModelBundle,

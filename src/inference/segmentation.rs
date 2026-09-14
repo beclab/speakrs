@@ -82,6 +82,15 @@ pub struct SegmentationModel {
 unsafe impl Send for SegmentationModel {}
 
 impl SegmentationModel {
+    /// Whether segmentation runs batched, which is the session and not the file.
+    ///
+    /// A consumer that reports this had to ask whether the prepared model exists, and that
+    /// answer is now one step short of the truth: the file can be there and its session can
+    /// have been declined, which is exactly the case the load path started tolerating.
+    pub fn is_batched(&self) -> bool {
+        self.primary_batched_session.is_some()
+    }
+
     /// Load a segmentation-3.0 ONNX model
     pub fn new(model_path: impl AsRef<Path>, step_duration: f32) -> Result<Self, ModelLoadError> {
         Self::with_mode(model_path, step_duration, ExecutionMode::Cpu)
@@ -117,9 +126,29 @@ impl SegmentationModel {
 
         let (session, session_elapsed) = timed!(Self::build_session(model_path, mode)?);
         let (primary_batched_session, primary_batched_elapsed) = timed!(
-            primary_batched_path(model_path, mode)
-                .map(|path| Self::build_session(&path, mode))
-                .transpose()?
+            primary_batched_path(model_path, mode).and_then(|path| {
+                // 🔴 A batched model that will not build turns batching off; it does not stop
+                // the pipeline loading. Absence was already the safe direction to fall, and
+                // this is the same outcome discovered one step later -- but only absence was
+                // handled, because until OpenVINO this file shipped with the weights and
+                // "present" implied "compiles". It is now derived at startup from whatever
+                // export is in the cache, so a new export shape produces a model that passes
+                // onnx's checker and that the GPU plugin then refuses. Propagating that
+                // failure takes down every install on the next weights revision, for a
+                // feature whose absence costs speed and nothing else.
+                match Self::build_session(&path, mode) {
+                    Ok(session) => Some(session),
+                    Err(error) => {
+                        tracing::warn!(
+                            model = %path.display(),
+                            %error,
+                            "the batched segmentation model would not build; \
+                             running segmentation one window at a time"
+                        );
+                        None
+                    }
+                }
+            })
         );
         #[cfg(feature = "coreml")]
         let (native_session, native_session_elapsed) =
