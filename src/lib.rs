@@ -28,7 +28,7 @@
 //! speakrs = { version = "0.5", features = ["migraphx"] }
 //!
 //! # Intel CPU, GPU or NPU -- not in a published release yet, so by git
-//! speakrs = { git = "https://github.com/beclab/speakrs", features = ["openvino"] }
+//! speakrs = { git = "https://github.com/beclab/speakrs", branch = "beclab-master", features = ["openvino"] }
 //! ```
 //!
 //! ## Quick start
