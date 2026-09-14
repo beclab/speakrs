@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "online")]
 use crate::inference::ExecutionMode;
 
-pub(crate) const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
+/// The segmentation model's file name, public because a consumer that provisions or probes
+/// models on its own has to name this file too, and did so by spelling it.
+pub const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
 const EMBEDDING_ONNX: &str = "wespeaker-voxceleb-resnet34.onnx";
 
 /// Resolved model paths for the speakrs pipeline
