@@ -27,8 +27,8 @@
 //! # AMD GPU
 //! speakrs = { version = "0.5", features = ["migraphx"] }
 //!
-//! # Intel CPU, GPU or NPU
-//! speakrs = { version = "0.5", features = ["openvino"] }
+//! # Intel CPU, GPU or NPU -- not in a published release yet, so by git
+//! speakrs = { git = "https://github.com/beclab/speakrs", features = ["openvino"] }
 //! ```
 //!
 //! ## Quick start
