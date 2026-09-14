@@ -341,6 +341,23 @@ fn openvino_gpu_plugin(mode: ExecutionMode) -> bool {
 /// already spelled it out themselves -- a shell that prepares the file and a binary that
 /// reports whether it is there -- so a change to either constant would have made both of them
 /// quietly wrong, in a direction whose only symptom is batching being off.
+/// The batched segmentation model this mode looks for, which is not the same file for all of
+/// them.
+///
+/// 🔴 Asked rather than spelled, and asked per mode, because a consumer that reports whether
+/// batching took has to name the file it looked for -- and naming the OpenVINO one on a CUDA
+/// deployment tells the reader to go find a file nothing there wants. It answers for the mode
+/// exactly as `primary_batched_path` decides, so the two cannot drift.
+pub fn batched_segmentation_file_name_for(mode: ExecutionMode) -> String {
+    if openvino_gpu_plugin(mode) {
+        return batched_segmentation_file_name();
+    }
+    let stem = SEGMENTATION_ONNX
+        .strip_suffix(".onnx")
+        .expect("SEGMENTATION_ONNX names an .onnx file");
+    format!("{stem}-b{PRIMARY_BATCH_SIZE}.onnx")
+}
+
 pub fn batched_segmentation_file_name() -> String {
     let stem = SEGMENTATION_ONNX
         .strip_suffix(".onnx")
@@ -403,6 +420,35 @@ mod tests {
             batched_segmentation_file_name(),
             "segmentation-3.0-b32-dynseq.onnx"
         );
+    }
+
+    /// The name a consumer reports, per mode, against the file the loader actually looks for.
+    /// Spelling either one on the consumer side is how the two drift; asserting them together
+    /// here is what makes asking cheaper than spelling.
+    #[test]
+    fn the_reported_file_name_is_the_one_the_loader_looks_for() {
+        let dir = models_dir_with_batched("reported");
+        let model = dir.join("segmentation-3.0.onnx");
+        std::fs::write(dir.join(batched_segmentation_file_name()), b"").unwrap();
+
+        for mode in [
+            ExecutionMode::Cpu,
+            ExecutionMode::Cuda,
+            ExecutionMode::MiGraphX,
+            ExecutionMode::OpenVino { device_type: "GPU" },
+            ExecutionMode::OpenVino { device_type: "CPU" },
+        ] {
+            let looked_for = primary_batched_path(&model, mode).unwrap_or_else(|| {
+                panic!("{mode:?} found no batched model with both files present")
+            });
+            assert_eq!(
+                looked_for.file_name().unwrap().to_str().unwrap(),
+                batched_segmentation_file_name_for(mode),
+                "{mode:?} reports a different file from the one it loads",
+            );
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
