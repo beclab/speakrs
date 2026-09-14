@@ -317,8 +317,13 @@ pub fn with_execution_mode(
 /// Measured on Arc Pro B70 (Battlemage, driver 26.22.38646.4, OpenVINO 2025.4.1): the
 /// embedding models return CL_OUT_OF_RESOURCES from clFinish at the default precision and
 /// run correctly at FP32, while segmentation is the other way round -- FP32 takes it from
-/// 6.0 s to 6.2 s per window and stops the batched graph compiling at all. The integrated
-/// part needs none of this; it runs everything at the default.
+/// 6.0 s to 6.2 s per window and stops the batched graph compiling at all.
+///
+/// Per session but NOT per device, and that is a limit rather than a decision: only the
+/// discrete card was measured to need this, and nothing here can tell a discrete card from
+/// an integrated one -- `GPU`, `GPU.0` and `GPU.1` are positions, not kinds. So the caller
+/// that knows would have to say, and no caller does. What that costs on the integrated part
+/// is unmeasured; the figures published for it were taken with FP32 already in force.
 ///
 /// `precision` is ignored by every mode but OpenVINO, which is why it is a parameter here
 /// rather than a field on the mode: it describes how one session is built, not what the

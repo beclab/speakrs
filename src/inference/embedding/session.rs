@@ -6,7 +6,11 @@ use crate::inference::{with_execution_mode, with_execution_mode_precision};
 
 use super::{EmbeddingModel, ExecutionMode};
 
-/// FP32 for the embedding models on OpenVINO, nothing for anyone else.
+/// FP32 for the embedding models on every OpenVINO device, nothing for anyone else.
+///
+/// Every device, including the integrated GPU and the CPU one, although only a discrete Arc
+/// was measured to need it: the device string says which position, never which kind of card.
+/// Narrowing this needs the caller to say, which none does.
 fn openvino_precision(mode: ExecutionMode) -> Option<&'static str> {
     mode.is_openvino().then_some("FP32")
 }
@@ -107,6 +111,10 @@ mod tests {
     fn only_openvino_asks_for_a_precision() {
         // The whole point is that this is not the pipeline's precision: segmentation goes
         // through the same provider on the same device at the default, and breaks at FP32.
+        //
+        // Both devices, deliberately: the measurement behind FP32 is a discrete card's, and
+        // this asserts the wider behaviour the code actually has, so that narrowing it later
+        // is a decision someone makes here rather than a difference nobody notices.
         assert_eq!(
             openvino_precision(ExecutionMode::OpenVino { device_type: "GPU" }),
             Some("FP32")
