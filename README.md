@@ -123,7 +123,7 @@ plugin emits an LSTM kernel referencing `OUTPUT1_GET_INDEX` and `OUTPUT2_GET_IND
 declaring them, and the OpenCL compiler rejects the program. The loader looks for a derivative
 with a dynamic sequence length instead, named by `batched_segmentation_file_name()`.
 
-🔴 **That derivative is not published, and `from_pretrained` does not fetch it.** It is written
+**That derivative is not published, and `from_pretrained` does not fetch it.** It is written
 from the stock export by whoever provisions the models. Without it the weights still download,
 the pipeline still builds, nothing errors — and segmentation runs **one window at a time**.
 
@@ -133,7 +133,7 @@ testing whether the file is on disk: a file that is present can still be decline
 Intel **CPU** and **NPU** are not affected. They load the published export and batch
 (62.1 ms per window against 529.5 unbatched, measured on the OpenVINO CPU device).
 
-⚠️ **Bare `AUTO` is the exception**: it is a decision OpenVINO makes on the machine, so this
+**Bare `AUTO` is the exception**: it is a decision OpenVINO makes on the machine, so this
 crate cannot know which device it will land on. It takes the published export, the one Intel CPU
 uses — which is right on a machine with no GPU and refused on one with a card, where batching
 then turns off rather than the load failing. `segmentation_is_batched()` is the only way to know

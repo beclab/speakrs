@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - master
-  # 🔴 beclab-master too, or this fork's own pull requests run nothing. Every branch here
+  # beclab-master too, or this fork's own pull requests run nothing. Every branch here
   # targets beclab-master -- master is kept as a mirror of upstream -- so a trigger listing
   # only master left #1 with zero checks while its reviews called the tests green on the
   # strength of one laptop.
@@ -64,7 +64,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 🔴 openvino only here. ort reports the provider as supported on x86_64 Windows and
+          # openvino only here. ort reports the provider as supported on x86_64 Windows and
           # Linux and nowhere else, so the arm64 and macOS rows would be asking clippy about a
           # backend that cannot exist there. Without this row the OpenVINO branches are not
           # linted at all -- which is how a duplicate import behind `load-dynamic` and a doc

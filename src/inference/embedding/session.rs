@@ -127,6 +127,10 @@ mod tests {
         // Narrowed here, which is where the previous version of this test asked for the
         // decision to be made. FP32 answers a failure in the GPU plugin, so it goes to the
         // devices that reach it and to nobody else.
+        //
+        // Every GPU rather than the discrete one, which is the limit and not the intent:
+        // GPU, GPU.0 and GPU.1 are positions in a list, not kinds of card, and nothing here
+        // can tell them apart.
         for device in ["GPU", "GPU.1", "HETERO:NPU,GPU", "BATCH:GPU(4)"] {
             assert_eq!(
                 openvino_precision(ExecutionMode::OpenVino {
@@ -148,8 +152,6 @@ mod tests {
             Some("FP32"),
         );
 
-        // Still every GPU rather than the discrete one: GPU, GPU.0 and GPU.1 are positions,
-        // not kinds of card, and nothing here can tell them apart.
         for device in ["CPU", "NPU", "MULTI:CPU,NPU"] {
             assert_eq!(
                 openvino_precision(ExecutionMode::OpenVino {
