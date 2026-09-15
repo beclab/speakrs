@@ -34,7 +34,7 @@ jobs:
         with:
           command: check
           rust-version: "1.88.0"
-          arguments: --no-default-features --features online,default-linalg,cuda,migraphx,load-dynamic,_metrics
+          arguments: --no-default-features --features online,default-linalg,cuda,migraphx,openvino,load-dynamic,_metrics
 
   msrv:
     name: MSRV Rust 1.88
@@ -60,9 +60,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 🔴 openvino only here. ort reports the provider as supported on x86_64 Windows and
+          # Linux and nowhere else, so the arm64 and macOS rows would be asking clippy about a
+          # backend that cannot exist there. Without this row the OpenVINO branches are not
+          # linted at all -- which is how a duplicate import behind `load-dynamic` and a doc
+          # block stacked on the wrong function both reached a branch that looked green.
           - name: Linux x86_64
             os: ubuntu-24.04
-            features: cuda migraphx load-dynamic _metrics
+            features: cuda migraphx openvino load-dynamic _metrics
           - name: Linux arm64
             os: ubuntu-24.04-arm
             features: cuda migraphx load-dynamic _metrics

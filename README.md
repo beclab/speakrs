@@ -133,6 +133,13 @@ testing whether the file is on disk: a file that is present can still be decline
 Intel **CPU** and **NPU** are not affected. They load the published export and batch
 (62.1 ms per window against 529.5 unbatched, measured on the OpenVINO CPU device).
 
+⚠️ **Bare `AUTO` is the exception**: it is a decision OpenVINO makes on the machine, so this
+crate cannot know which device it will land on. It takes the published export, the one Intel CPU
+uses — which is right on a machine with no GPU and refused on one with a card, where batching
+then turns off rather than the load failing. `segmentation_is_batched()` is the only way to know
+which happened. (The embedding models still get FP32 under bare `AUTO`, because guessing wrong
+in that direction costs the session rather than its speed.)
+
 The device string is passed through untouched, so `GPU.1`, `HETERO:NPU,GPU`, `AUTO:GPU,CPU` and
 `BATCH:GPU(4)` all work. Build one from a runtime value with `ExecutionMode::openvino(&str)` —
 the variant holds a `&'static str`, and that constructor interns rather than making every caller

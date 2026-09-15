@@ -2,7 +2,9 @@ use std::path::Path;
 
 use ort::session::Session;
 
-use crate::inference::{openvino_gpu_plugin, with_execution_mode, with_execution_mode_precision};
+use crate::inference::{
+    may_reach_openvino_gpu, with_execution_mode, with_execution_mode_precision,
+};
 
 use super::{EmbeddingModel, ExecutionMode};
 
@@ -22,7 +24,7 @@ use super::{EmbeddingModel, ExecutionMode};
 /// measured to need it, and neither generates the kernel the discrete card failed in -- they
 /// were being handed a switch that answers a question about a different plugin.
 fn openvino_precision(mode: ExecutionMode) -> Option<&'static str> {
-    openvino_gpu_plugin(mode).then_some("FP32")
+    may_reach_openvino_gpu(mode).then_some("FP32")
 }
 
 impl EmbeddingModel {
@@ -134,6 +136,17 @@ mod tests {
                 "{device:?} reaches the plugin the measurement came from",
             );
         }
+
+        // 🔴 Bare AUTO is in, and the file selection excludes it: the two guesses go opposite
+        // ways on purpose. OpenVINO may resolve AUTO onto a discrete card, and a card at the
+        // default precision is the CL_OUT_OF_RESOURCES this switch answers, so guessing wrong
+        // here costs the session. Guessing wrong about the file only costs batching.
+        assert_eq!(
+            openvino_precision(ExecutionMode::OpenVino {
+                device_type: "AUTO"
+            }),
+            Some("FP32"),
+        );
 
         // ⚠️ Still every GPU rather than the discrete one: GPU, GPU.0 and GPU.1 are positions,
         // not kinds of card, and nothing here can tell them apart.

@@ -6,7 +6,7 @@ pub(crate) mod segmentation;
 pub use segmentation::{batched_segmentation_file_name, batched_segmentation_file_name_for};
 
 use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
 use std::ffi::CStr;
@@ -14,7 +14,6 @@ use std::fmt;
 #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
 use std::path::Path;
 use std::path::PathBuf;
-#[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
 use std::sync::OnceLock;
 
 pub use embedding::EmbeddingModel;
@@ -334,14 +333,24 @@ pub(crate) fn ov_target(device_type: &str) -> OvTarget {
     }
 }
 
-/// Whether this mode reaches OpenVINO's GPU plugin, which is what the substitution above is for.
+/// Whether this mode certainly reaches OpenVINO's GPU plugin.
 ///
-/// 🔴 `UnresolvedAuto` is not here. Bare `AUTO` is a legal device string that OpenVINO resolves
-/// on the machine: on a box with no GPU it picks the processor, where the stock export loads
-/// and runs batched at 62.1 ms a window, and sending it to a derived model nobody provisioned
-/// would cost that for nothing. On a box with a GPU it may reach the plugin and be refused --
-/// which is why it IS in `tolerates_unbuildable_batched` below. Guessing towards the stock
-/// export and tolerating the refusal is what this crate already did; naming it is the change.
+/// 🔴 Bare `AUTO` is deliberately not here, and `may_reach_openvino_gpu` is the one that says
+/// it might be. Which way to guess about `AUTO` depends on what the answer is used for, and the
+/// two callers here want opposite guesses:
+///
+/// - **Which model file to load** uses this one. Guessing "GPU" sends a machine with no GPU to
+///   a derived model nobody provisioned, costing it the batching it would have had at 62.1 ms
+///   a window. Guessing "not GPU" hands a GPU the stock export, which it refuses -- and that
+///   refusal is survivable, because `tolerates_unbuildable_batched` includes `AUTO`.
+/// - **Whether the embedding models get FP32** uses the other one. Guessing "not GPU" sends a
+///   discrete card back to the default precision, where these models return
+///   `CL_OUT_OF_RESOURCES` out of `clFinish` -- the failure FP32 exists to answer. Guessing
+///   "GPU" costs a processor a precision it did not need.
+///
+/// One costs speed, the other costs the load. They are not the same question and cannot share
+/// an answer; an earlier version of this had them share this predicate, which quietly took FP32
+/// away from bare `AUTO`.
 pub(crate) fn openvino_gpu_plugin(mode: ExecutionMode) -> bool {
     match mode {
         ExecutionMode::OpenVino { device_type } => {
@@ -350,6 +359,20 @@ pub(crate) fn openvino_gpu_plugin(mode: ExecutionMode) -> bool {
                 OvTarget::GpuOnly | OvTarget::GpuComposite
             )
         }
+        _ => false,
+    }
+}
+
+/// Whether this mode may reach OpenVINO's GPU plugin, counting the case nobody can resolve.
+///
+/// `openvino_gpu_plugin` plus bare `AUTO`. For decisions whose wrong answer costs a session
+/// rather than its speed -- see the note there for why the two directions differ.
+pub(crate) fn may_reach_openvino_gpu(mode: ExecutionMode) -> bool {
+    match mode {
+        ExecutionMode::OpenVino { device_type } => matches!(
+            ov_target(device_type),
+            OvTarget::GpuOnly | OvTarget::GpuComposite | OvTarget::UnresolvedAuto
+        ),
         _ => false,
     }
 }

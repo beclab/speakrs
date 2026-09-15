@@ -184,6 +184,10 @@ impl OwnedDiarizationPipeline {
     /// rather than testing for the file: a file that is present can still be declined.
     ///
     /// Intel CPU and NPU are not affected -- they load the published export and batch.
+    ///
+    /// ⚠️ Bare `AUTO` takes the published export too, since which device it resolves to is not
+    /// knowable here. On a machine with a GPU that export is refused and batching turns off, so
+    /// `segmentation_is_batched` is the answer there as well.
     #[cfg(feature = "online")]
     pub fn from_pretrained(mode: ExecutionMode) -> Result<Self, PipelineError> {
         PipelineBuilder::from_pretrained(mode)?.build()
