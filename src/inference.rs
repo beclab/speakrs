@@ -880,12 +880,11 @@ mod tests {
 
     #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
     use super::{DynamicRuntimeError, OrtRuntimeError, ensure_ort_ready};
-    #[cfg(any(
-        not(feature = "coreml"),
-        not(feature = "cuda"),
-        not(feature = "migraphx"),
-        not(feature = "openvino")
-    ))]
+    // Unconditional, because two tests below are. The guard this used to carry -- every one
+    // of the four accelerated features off -- described only the tests that assert what a
+    // build without a feature refuses; it was already wrong for the one asserting an empty
+    // device string, and with all four features on the import vanished and the test module
+    // stopped compiling. Nothing in CI builds that combination.
     use super::{ExecutionMode, names_a_device};
 
     #[cfg(not(feature = "coreml"))]
