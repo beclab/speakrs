@@ -141,7 +141,7 @@ impl ExecutionMode {
         }
 
         if let Self::OpenVino { device_type } = self {
-            // 🔴 Only the empty string. ONNX Runtime does not check this either -- ort passes
+            // Only the empty string. ONNX Runtime does not check this either -- ort passes
             // device_type straight into the provider options -- and the set of legal names
             // lives in ONNX Runtime's C++ side and in OpenVINO, where it grows: AUTO, MULTI,
             // HETERO and BATCH prefixes, GPU.N positions, a batch size in brackets. Refusing
@@ -191,14 +191,14 @@ impl ExecutionMode {
 
     /// An OpenVINO mode for a device this process discovered at runtime.
     ///
-    /// 🔴 The device a machine has is not known until the process is on it -- `GPU.0` and
+    /// The device a machine has is not known until the process is on it -- `GPU.0` and
     /// `GPU.1` are positions, and which one is the discrete card is the machine's business --
     /// so the string usually arrives from argv, an environment variable, or a probe. The
     /// variant holds a `&'static str` because `ExecutionMode` is `Copy` and is passed by value
     /// in dozens of places, which leaves a caller with a runtime string no way in except to
     /// leak one. Every caller then writes that line itself, and writes it differently.
     ///
-    /// ⚠️ This leaks too, once per distinct device string, and never frees. A process uses one
+    /// This leaks too, once per distinct device string, and never frees. A process uses one
     /// or two, so the total is bounded by how many different devices it is asked for rather
     /// than by how many times it asks. Repeated calls with the same string reuse the first.
     pub fn openvino(device: &str) -> Self {
@@ -218,7 +218,7 @@ impl ExecutionMode {
 
     /// This mode named for a human, with the device when there is one: `openvino:GPU.1`.
     ///
-    /// 🔴 Separate from `as_str` rather than replacing it. `as_str` is the backend's name and
+    /// Separate from `as_str` rather than replacing it. `as_str` is the backend's name and
     /// is `const`, so it cannot carry a device in the first place, and consumers already branch
     /// on it and key caches by it. This is the string a log line wants, and the one consumer
     /// that needed it was building it by hand -- and leaking it -- beside a mode it had just
@@ -252,12 +252,12 @@ impl fmt::Display for ExecutionMode {
 
 /// What an OpenVINO device string resolves to, as far as decisions in this crate are concerned.
 ///
-/// 🔴 The split is by decision, not by kind of hardware. `HETERO:NPU,GPU` and `MULTI:CPU,NPU`
+/// The split is by decision, not by kind of hardware. `HETERO:NPU,GPU` and `MULTI:CPU,NPU`
 /// are both "several devices", and they want opposite answers: the first reaches the GPU
 /// plugin and the second cannot. What every caller here actually asks is whether the GPU
 /// plugin is in play.
 ///
-/// ⚠️ It cannot tell a discrete card from an integrated one. `GPU`, `GPU.0` and `GPU.1` are
+/// It cannot tell a discrete card from an integrated one. `GPU`, `GPU.0` and `GPU.1` are
 /// positions in a list, not kinds of hardware, and only a caller standing on the machine knows
 /// which is which. Anything that needs the distinction -- the precision the embedding models
 /// are given, for one -- is answered for every GPU or for none.
@@ -274,7 +274,7 @@ pub(crate) enum OvTarget {
     GpuComposite,
     /// A device list whose every name was read, and none of them a GPU: `MULTI:CPU,NPU`
     ///
-    /// 🔴 Every name read, not merely no GPU found. A list holding a name this crate cannot
+    /// Every name read, not merely no GPU found. A list holding a name this crate cannot
     /// read is not this: see `ov_target` for why the difference decides whether a machine
     /// loads at all.
     NonGpuComposite,
@@ -290,7 +290,7 @@ pub(crate) enum OvTarget {
 
 /// The device names this crate recognises inside a device string.
 pub(crate) fn ov_device_token(token: &str) -> Option<&'static str> {
-    // 🔴 The batch size comes off first. `BATCH:GPU(4)` sets the batch explicitly -- OpenVINO's
+    // The batch size comes off first. `BATCH:GPU(4)` sets the batch explicitly -- OpenVINO's
     // own documentation gives `BATCH:GPU(16)` and `BATCH:CPU(16)` as examples -- so a token
     // compared whole reads `GPU(4)` as some device that is not a GPU, and the one form whose
     // whole purpose is batching would be the one that loses it.
@@ -330,7 +330,7 @@ pub(crate) fn ov_target(device_type: &str) -> OvTarget {
             } else if list.split(',').all(|t| ov_device_token(t).is_some()) {
                 OvTarget::NonGpuComposite
             } else {
-                // 🔴 `NonGpuComposite` is claimed only when every name in the list was read.
+                // `NonGpuComposite` is claimed only when every name in the list was read.
                 // Reaching it by finding no GPU folds together two lists that look identical
                 // from here: one that names no GPU, and one carrying a name this crate cannot
                 // read. `AUTO:-CPU` is the second -- OpenVINO's documented way to say "choose
@@ -357,7 +357,7 @@ pub(crate) fn ov_target(device_type: &str) -> OvTarget {
 
 /// Whether this mode certainly reaches OpenVINO's GPU plugin.
 ///
-/// 🔴 Bare `AUTO` is deliberately not here, and `may_reach_openvino_gpu` is the one that says
+/// Bare `AUTO` is deliberately not here, and `may_reach_openvino_gpu` is the one that says
 /// it might be. Which way to guess about `AUTO` depends on what the answer is used for, and the
 /// two callers here want opposite guesses:
 ///
@@ -798,7 +798,7 @@ mod tests {
         }
     }
 
-    /// 🔴 The point is the second call. A runtime device string has to become `&'static str`
+    /// The point is the second call. A runtime device string has to become `&'static str`
     /// somehow, and every consumer that did it by hand leaked one per call site; interning
     /// bounds the total by how many different devices a process asks for, which is one or two.
     #[test]

@@ -14,13 +14,13 @@ use super::{EmbeddingModel, ExecutionMode};
 /// The measurement is a discrete Arc Pro B70, where these models return `CL_OUT_OF_RESOURCES`
 /// out of `clFinish` at the default precision and run correctly at FP32.
 ///
-/// ⚠️ It reaches every GPU, not only the discrete one, and that is a limit rather than a
+/// It reaches every GPU, not only the discrete one, and that is a limit rather than a
 /// choice: `GPU`, `GPU.0` and `GPU.1` are positions in a list, not kinds of hardware, so
 /// nothing here can tell an integrated part from a card. Narrowing further needs a caller who
 /// says which, and none does. What the published integrated-GPU figures were taken with is
 /// FP32, so they still describe what it does.
 ///
-/// 🔴 What changed: OpenVINO on the processor and the NPU no longer get it. Neither was
+/// What changed: OpenVINO on the processor and the NPU no longer get it. Neither was
 /// measured to need it, and neither generates the kernel the discrete card failed in -- they
 /// were being handed a switch that answers a question about a different plugin.
 fn openvino_precision(mode: ExecutionMode) -> Option<&'static str> {
@@ -124,7 +124,7 @@ mod tests {
         // The whole point is that this is not the pipeline's precision: segmentation goes
         // through the same provider on the same device at the default, and breaks at FP32.
         //
-        // 🔴 Narrowed here, which is where the previous version of this test asked for the
+        // Narrowed here, which is where the previous version of this test asked for the
         // decision to be made. FP32 answers a failure in the GPU plugin, so it goes to the
         // devices that reach it and to nobody else.
         for device in ["GPU", "GPU.1", "HETERO:NPU,GPU", "BATCH:GPU(4)"] {
@@ -137,7 +137,7 @@ mod tests {
             );
         }
 
-        // 🔴 Bare AUTO is in, and the file selection excludes it: the two guesses go opposite
+        // Bare AUTO is in, and the file selection excludes it: the two guesses go opposite
         // ways on purpose. OpenVINO may resolve AUTO onto a discrete card, and a card at the
         // default precision is the CL_OUT_OF_RESOURCES this switch answers, so guessing wrong
         // here costs the session. Guessing wrong about the file only costs batching.
@@ -148,7 +148,7 @@ mod tests {
             Some("FP32"),
         );
 
-        // ⚠️ Still every GPU rather than the discrete one: GPU, GPU.0 and GPU.1 are positions,
+        // Still every GPU rather than the discrete one: GPU, GPU.0 and GPU.1 are positions,
         // not kinds of card, and nothing here can tell them apart.
         for device in ["CPU", "NPU", "MULTI:CPU,NPU"] {
             assert_eq!(

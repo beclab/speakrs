@@ -129,7 +129,7 @@ impl SegmentationModel {
         let (primary_batched_session, primary_batched_elapsed) =
             timed!(match primary_batched_path(model_path, mode) {
                 None => None,
-                // 🔴 On OpenVINO a batched model that will not build turns batching off; it
+                // On OpenVINO a batched model that will not build turns batching off; it
                 // does not stop the pipeline loading. Absence was already the safe direction
                 // to fall, and this is the same outcome discovered one step later. There the
                 // file is derived at startup by the consumer from whatever export is in the
@@ -138,7 +138,7 @@ impl SegmentationModel {
                 // install on the next weights revision, for a feature whose absence costs
                 // speed and nothing else.
                 //
-                // 🔴 Every other backend keeps the behaviour it had before this fork: the
+                // Every other backend keeps the behaviour it had before this fork: the
                 // error propagates and the load fails. Their batched export ships with the
                 // weights, so one that is present and will not build is a damaged download,
                 // and stopping on it says so where falling back would not. An earlier version
@@ -326,7 +326,7 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
 /// Whether a batched segmentation model that is present and will not build costs this mode
 /// only its batching, rather than its load.
 ///
-/// 🔴 True for OpenVINO alone, because there the file is written by the consumer at startup
+/// True for OpenVINO alone, because there the file is written by the consumer at startup
 /// from whatever export is in the cache: a new export shape can pass onnx's checker and still
 /// be refused by the plugin, and propagating that stops every install on the next weights
 /// revision over a feature whose absence costs speed. Every other backend gets the export with
@@ -334,11 +334,11 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
 /// it -- which is what they did before this fork, and what they must keep doing, since adding
 /// a backend is not a licence to change the others.
 ///
-/// 🔴 Narrowed to the devices that can actually refuse: OpenVINO on the processor or the NPU
+/// Narrowed to the devices that can actually refuse: OpenVINO on the processor or the NPU
 /// loads the stock export that ships with the weights, so present-and-unbuildable is a damaged
 /// download there too and the load should stop on it, as it does for CUDA.
 ///
-/// ⚠️ `UnresolvedAuto` is in, and has to be. Bare `AUTO` takes the stock export -- see
+/// `UnresolvedAuto` is in, and has to be. Bare `AUTO` takes the stock export -- see
 /// `openvino_gpu_plugin` for why -- and may still land on a GPU that refuses it. Leaving it out
 /// would mean bare `AUTO` cannot start on a machine with an Intel GPU, which is worse than what
 /// it does today.
@@ -355,7 +355,7 @@ fn tolerates_unbuildable_batched(mode: ExecutionMode) -> bool {
 /// The batched segmentation model this mode looks for, which is not the same file for all of
 /// them.
 ///
-/// 🔴 Asked rather than spelled, and asked per mode, because a consumer that reports whether
+/// Asked rather than spelled, and asked per mode, because a consumer that reports whether
 /// batching took has to name the file it looked for -- and naming the OpenVINO one on a CUDA
 /// deployment tells the reader to go find a file nothing there wants. It answers for the mode
 /// exactly as `primary_batched_path` decides, so the two cannot drift.
@@ -472,7 +472,7 @@ mod tests {
 
     /// Every device string this crate can be handed, and what it resolves to.
     ///
-    /// 🔴 The rows that `contains("GPU")` got wrong are the point of the table. `BATCH:GPU(4)`
+    /// The rows that `contains("GPU")` got wrong are the point of the table. `BATCH:GPU(4)`
     /// is the documented way to set an explicit batch size and reads as a non-GPU device when
     /// the token is compared whole; `MULTI:CPU,NPU` reaches no GPU and was sent to the derived
     /// model; bare `AUTO` is a runtime decision and fell to the stock export by the accident
@@ -506,7 +506,7 @@ mod tests {
         }
     }
 
-    /// 🔴 `NonGpuComposite` is the only answer that both takes the stock export and declines to
+    /// `NonGpuComposite` is the only answer that both takes the stock export and declines to
     /// survive its refusal, so it is claimed only when every name in the list was read. Reaching
     /// it by finding no GPU cannot tell "this list names no GPU" from "this list holds a name I
     /// cannot read" -- and `AUTO:-CPU`, OpenVINO's documented way to ask for everything except
@@ -560,7 +560,7 @@ mod tests {
         }
     }
 
-    /// 🔴 Bare `AUTO` keeps the behaviour it has today, deliberately: the stock export, and a
+    /// Bare `AUTO` keeps the behaviour it has today, deliberately: the stock export, and a
     /// refusal it survives. Treating it as a GPU would cost a machine with no GPU the batching
     /// it currently gets, to buy a derived model nobody provisions by default.
     #[test]
@@ -578,7 +578,7 @@ mod tests {
         );
     }
 
-    /// 🔴 Adding a backend must not change the others. A batched export that is present and
+    /// Adding a backend must not change the others. A batched export that is present and
     /// will not build stopped the load on every backend before this fork; an earlier version
     /// of this branch made it fall back everywhere, which turned a corrupt file on CUDA from a
     /// failed start into throughput lost in silence. Only OpenVINO, where the file is derived
@@ -610,7 +610,7 @@ mod tests {
             );
         }
 
-        // 🔴 OpenVINO on the processor and the NPU load the stock export, which ships with the
+        // OpenVINO on the processor and the NPU load the stock export, which ships with the
         // weights. Present and unbuildable means a damaged download there, exactly as it does
         // on CUDA, and the load must stop on it.
         for mode in [
@@ -667,7 +667,7 @@ mod tests {
             );
         }
 
-        // 🔴 And the devices that do NOT reach that plugin take it, which is the case this
+        // And the devices that do NOT reach that plugin take it, which is the case this
         // asserted the other way round. The kernel that fails is the GPU plugin's; OpenVINO on
         // the processor compiles the stock export and was measured running it batched at 62.1 ms
         // per window, against 529.5 one window at a time. Refusing it there traded a 8.5x for a
