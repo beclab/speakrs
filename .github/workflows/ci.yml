@@ -7,8 +7,12 @@ on:
       - master
   # 🔴 beclab-master too, or this fork's own pull requests run nothing. Every branch here
   # targets beclab-master -- master is kept as a mirror of upstream -- so a trigger listing
-  # only master meant #1 sat with zero checks while the reviews it went through called its
-  # tests green on the strength of one laptop.
+  # only master left #1 with zero checks while its reviews called the tests green on the
+  # strength of one laptop.
+  #
+  # Split out of that branch and sent here first on purpose: GitHub reads the trigger from the
+  # workflow on the BASE branch, so the fix cannot switch itself on from inside the pull
+  # request that carries it.
   pull_request:
     branches:
       - master
