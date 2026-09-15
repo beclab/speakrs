@@ -120,7 +120,7 @@ impl ExecutionMode {
             {
                 return Err(ExecutionModeError {
                     mode: self,
-                    feature: "coreml",
+                    feature: Some("coreml"),
                 });
             }
         }
@@ -135,7 +135,7 @@ impl ExecutionMode {
             {
                 return Err(ExecutionModeError {
                     mode: self,
-                    feature: "migraphx",
+                    feature: Some("migraphx"),
                 });
             }
         }
@@ -150,10 +150,10 @@ impl ExecutionMode {
             //
             // Empty is different: it names no device at all, and the provider's answer to it
             // is an error a long way from the call that caused it.
-            if device_type.trim().is_empty() {
+            if !names_a_device(device_type) {
                 return Err(ExecutionModeError {
                     mode: self,
-                    feature: "openvino",
+                    feature: None,
                 });
             }
         }
@@ -168,7 +168,7 @@ impl ExecutionMode {
             {
                 return Err(ExecutionModeError {
                     mode: self,
-                    feature: "openvino",
+                    feature: Some("openvino"),
                 });
             }
         }
@@ -184,7 +184,7 @@ impl ExecutionMode {
         {
             Err(ExecutionModeError {
                 mode: self,
-                feature: "cuda",
+                feature: Some("cuda"),
             })
         }
     }
@@ -286,6 +286,21 @@ pub(crate) enum OvTarget {
     /// crate cannot see. Kept as its own value rather than folded into either side, because
     /// what to do about it is a judgement written down at each call site, not a fact.
     UnresolvedAuto,
+}
+
+/// Whether a device string names a device at all.
+///
+/// The one thing this crate refuses on its own. Everything else is ONNX Runtime's to accept:
+/// the set of legal names lives in its C++ side and in OpenVINO, and it grows. Empty is
+/// different -- it names nothing, and the provider's answer to it surfaces a long way from
+/// the call that caused it.
+///
+/// A predicate rather than an expression inside `validate`, so that what it accepts can be
+/// asserted on any build. `validate` cannot: without the `openvino` feature every OpenVINO
+/// mode is refused for the feature, so the test that the other strings get through only ever
+/// ran where the feature was on -- which is no CI job here.
+pub(crate) fn names_a_device(device: &str) -> bool {
+    !device.trim().is_empty()
 }
 
 /// The device names this crate recognises inside a device string.
@@ -495,14 +510,35 @@ pub enum DynamicRuntimeError {
     },
 }
 
-/// Errors from requesting an execution mode that is not supported in the current build
-#[derive(Debug, Clone, thiserror::Error)]
+/// Errors from requesting an execution mode this build cannot provide, or one that does not
+/// say which device it means
+#[derive(Debug, Clone)]
 #[non_exhaustive]
-#[error("{mode} requires the `{feature}` Cargo feature")]
 pub struct ExecutionModeError {
     mode: ExecutionMode,
-    feature: &'static str,
+    /// The Cargo feature the mode needs, or `None` when the mode itself is what is wrong.
+    ///
+    /// Two unrelated refusals used to render as one sentence. An empty OpenVINO device string
+    /// is rejected before the feature is looked at, so a build with `openvino` enabled was
+    /// told it needed the `openvino` feature -- false on its face, and silent about the empty
+    /// string that actually caused it.
+    feature: Option<&'static str>,
 }
+
+impl fmt::Display for ExecutionModeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.feature {
+            Some(feature) => write!(f, "{} requires the `{feature}` Cargo feature", self.mode),
+            None => write!(
+                f,
+                "{} was given a device string naming no device",
+                self.mode
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ExecutionModeError {}
 
 impl From<ExecutionModeError> for ort::Error {
     fn from(error: ExecutionModeError) -> Self {
@@ -772,9 +808,15 @@ fn dedup_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 mod tests {
     /// Empty names no device; anything else is left to ONNX Runtime, whose set of legal
     /// strings is larger than this crate's and still growing.
+    ///
+    /// The second half asks the predicate rather than `validate`, so it runs on every build.
+    /// Through `validate` it needed the `openvino` feature, and no job in this repository's CI
+    /// builds that -- so this test was green on the strength of its first half, and the "only"
+    /// in its name was exactly the part nothing ran.
     #[test]
     fn only_an_empty_device_string_is_refused() {
         for device in ["", " ", "\t"] {
+            assert!(!names_a_device(device), "{device:?} names no device");
             assert!(
                 ExecutionMode::OpenVino {
                     device_type: device
@@ -785,17 +827,26 @@ mod tests {
             );
         }
 
-        #[cfg(feature = "openvino")]
         for device in ["GPU", "AUTO", "BATCH:GPU(4)", "FUTURE:GPU", "gpu"] {
             assert!(
-                ExecutionMode::OpenVino {
-                    device_type: device
-                }
-                .validate()
-                .is_ok(),
+                names_a_device(device),
                 "{device:?} is ONNX Runtime's to accept or refuse, not this crate's",
             );
         }
+    }
+
+    /// Which of the two refusals it is has to survive into the message. The empty string is
+    /// caught before the feature is looked at, so this is what a build with `openvino` sees
+    /// too -- and naming the feature there would be false, since it is enabled.
+    #[test]
+    fn an_empty_device_string_is_not_blamed_on_a_missing_feature() {
+        let error = ExecutionMode::OpenVino { device_type: "" }
+            .validate()
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "openvino was given a device string naming no device",
+        );
     }
 
     /// The point is the second call. A runtime device string has to become `&'static str`
@@ -827,15 +878,15 @@ mod tests {
         assert_eq!(format!("{}", ExecutionMode::Cuda), "cuda");
     }
 
+    #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
+    use super::{DynamicRuntimeError, OrtRuntimeError, ensure_ort_ready};
     #[cfg(any(
         not(feature = "coreml"),
         not(feature = "cuda"),
         not(feature = "migraphx"),
         not(feature = "openvino")
     ))]
-    use super::ExecutionMode;
-    #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
-    use super::{DynamicRuntimeError, OrtRuntimeError, ensure_ort_ready};
+    use super::{ExecutionMode, names_a_device};
 
     #[cfg(not(feature = "coreml"))]
     #[test]
