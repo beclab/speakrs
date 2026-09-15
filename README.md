@@ -121,7 +121,8 @@ let result = pipeline.run(&audio)?;
 On an Intel **GPU**, OpenVINO cannot compile the published batched segmentation export — its
 plugin emits an LSTM kernel referencing `OUTPUT1_GET_INDEX` and `OUTPUT2_GET_INDEX` without
 declaring them, and the OpenCL compiler rejects the program. The loader looks for a derivative
-with a dynamic sequence length instead, named by `batched_segmentation_file_name()`.
+with a dynamic sequence length instead, named by `inference::batched_segmentation_file_name()` -- the crate root re-exports
+`ExecutionMode`, but not this.
 
 **That derivative is not published, and `from_pretrained` does not fetch it.** It is written
 from the stock export by whoever provisions the models. Without it the weights still download,
