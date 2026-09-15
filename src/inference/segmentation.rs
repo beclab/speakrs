@@ -351,13 +351,105 @@ fn tolerates_unbuildable_batched(mode: ExecutionMode) -> bool {
 /// measured to run batched at 62.1 ms per window, silently ran one window at a time instead
 /// whenever nobody had prepared the substitute.
 ///
-/// Substring rather than prefix: `HETERO:NPU,GPU` and `AUTO:GPU,CPU` both reach the plugin, and
-/// a device list this does not recognise is safer treated as reaching it -- that direction costs
-/// batching when the substitute is missing, the other direction costs a session that will not
-/// build.
+/// What an OpenVINO device string resolves to, as far as decisions in this crate are concerned.
+///
+/// 🔴 The split is by decision, not by kind of hardware. `HETERO:NPU,GPU` and `MULTI:CPU,NPU`
+/// are both "several devices", and they want opposite answers: the first reaches the GPU
+/// plugin and the second cannot. What every caller here actually asks is whether the GPU
+/// plugin is in play.
+///
+/// ⚠️ It cannot tell a discrete card from an integrated one. `GPU`, `GPU.0` and `GPU.1` are
+/// positions in a list, not kinds of hardware, and only a caller standing on the machine knows
+/// which is which. Anything that needs the distinction -- the precision the embedding models
+/// are given, for one -- is answered for every GPU or for none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OvTarget {
+    /// `GPU`, `GPU.1`
+    GpuOnly,
+    /// A device list naming a GPU: `HETERO:NPU,GPU`, `AUTO:GPU,CPU`, `BATCH:GPU(4)`
+    GpuComposite,
+    /// A device list naming no GPU: `MULTI:CPU,NPU`
+    NonGpuComposite,
+    /// `CPU`
+    Cpu,
+    /// `NPU`
+    Npu,
+    /// Bare `AUTO` or bare `MULTI`: a decision OpenVINO makes at runtime, on a machine this
+    /// crate cannot see. Kept as its own value rather than folded into either side, because
+    /// what to do about it is a judgement written down at each call site, not a fact.
+    UnresolvedAuto,
+}
+
+/// The device names this crate recognises inside a device string.
+fn ov_device_token(token: &str) -> Option<&'static str> {
+    // 🔴 The batch size comes off first. `BATCH:GPU(4)` sets the batch explicitly -- OpenVINO's
+    // own documentation gives `BATCH:GPU(16)` and `BATCH:CPU(16)` as examples -- so a token
+    // compared whole reads `GPU(4)` as some device that is not a GPU, and the one form whose
+    // whole purpose is batching would be the one that loses it.
+    let token = token.trim();
+    let token = match token.split_once('(') {
+        Some((head, tail)) if tail.ends_with(')') && !tail.is_empty() => head.trim_end(),
+        _ => token,
+    };
+    let base = token.split_once('.').map_or(token, |(head, _)| head);
+    match base {
+        "GPU" => Some("GPU"),
+        "CPU" => Some("CPU"),
+        "NPU" => Some("NPU"),
+        _ => None,
+    }
+}
+
+/// Resolve a device string once, so that every decision below reads the same answer.
+///
+/// The one place `AUTO` / `MULTI` / `HETERO` / `BATCH` / `GPU.1` / a batch size in brackets are
+/// interpreted. A device syntax that arrives later is a change here and nowhere else.
+fn ov_target(device_type: &str) -> OvTarget {
+    let device_type = device_type.trim();
+    match device_type.split_once(':') {
+        Some((prefix, list)) => {
+            let prefix = prefix.trim();
+            if !matches!(prefix, "AUTO" | "MULTI" | "HETERO" | "BATCH") {
+                // Not a form this crate knows. Treated as reaching the plugin: that direction
+                // costs batching when the substitute is missing, the other costs a session
+                // that will not build.
+                return OvTarget::GpuComposite;
+            }
+            if list.split(',').any(|t| ov_device_token(t) == Some("GPU")) {
+                OvTarget::GpuComposite
+            } else if list.trim().is_empty() {
+                OvTarget::UnresolvedAuto
+            } else {
+                OvTarget::NonGpuComposite
+            }
+        }
+        None => match ov_device_token(device_type) {
+            Some("GPU") => OvTarget::GpuOnly,
+            Some("CPU") => OvTarget::Cpu,
+            Some("NPU") => OvTarget::Npu,
+            _ if matches!(device_type, "AUTO" | "MULTI") => OvTarget::UnresolvedAuto,
+            // Same reasoning as the unknown prefix above.
+            _ => OvTarget::GpuComposite,
+        },
+    }
+}
+
+/// Whether this mode reaches OpenVINO's GPU plugin, which is what the substitution above is for.
+///
+/// 🔴 `UnresolvedAuto` is not here. Bare `AUTO` is a legal device string that OpenVINO resolves
+/// on the machine: on a box with no GPU it picks the processor, where the stock export loads
+/// and runs batched at 62.1 ms a window, and sending it to a derived model nobody provisioned
+/// would cost that for nothing. On a box with a GPU it may reach the plugin and be refused --
+/// which is why it IS in `tolerates_unbuildable_batched` below. Guessing towards the stock
+/// export and tolerating the refusal is what this crate already did; naming it is the change.
 fn openvino_gpu_plugin(mode: ExecutionMode) -> bool {
     match mode {
-        ExecutionMode::OpenVino { device_type } => device_type.contains("GPU"),
+        ExecutionMode::OpenVino { device_type } => {
+            matches!(
+                ov_target(device_type),
+                OvTarget::GpuOnly | OvTarget::GpuComposite
+            )
+        }
         _ => false,
     }
 }
@@ -477,6 +569,71 @@ mod tests {
         }
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Every device string this crate can be handed, and what it resolves to.
+    ///
+    /// 🔴 The rows that `contains("GPU")` got wrong are the point of the table. `BATCH:GPU(4)`
+    /// is the documented way to set an explicit batch size and reads as a non-GPU device when
+    /// the token is compared whole; `MULTI:CPU,NPU` reaches no GPU and was sent to the derived
+    /// model; bare `AUTO` is a runtime decision and fell to the stock export by the accident
+    /// that its four letters do not spell GPU.
+    #[test]
+    fn a_device_string_resolves_to_one_answer() {
+        for (device, want) in [
+            ("GPU", OvTarget::GpuOnly),
+            ("GPU.0", OvTarget::GpuOnly),
+            ("GPU.1", OvTarget::GpuOnly),
+            ("CPU", OvTarget::Cpu),
+            ("NPU", OvTarget::Npu),
+            ("HETERO:NPU,GPU", OvTarget::GpuComposite),
+            ("AUTO:GPU,CPU", OvTarget::GpuComposite),
+            ("AUTO:CPU,GPU", OvTarget::GpuComposite),
+            ("BATCH:GPU", OvTarget::GpuComposite),
+            ("BATCH:GPU(4)", OvTarget::GpuComposite),
+            ("BATCH:GPU(16)", OvTarget::GpuComposite),
+            ("MULTI:GPU.1,GPU.0", OvTarget::GpuComposite),
+            ("BATCH:CPU(16)", OvTarget::NonGpuComposite),
+            ("MULTI:CPU,NPU", OvTarget::NonGpuComposite),
+            ("AUTO", OvTarget::UnresolvedAuto),
+            ("MULTI", OvTarget::UnresolvedAuto),
+            (" GPU ", OvTarget::GpuOnly),
+        ] {
+            assert_eq!(ov_target(device), want, "{device:?}");
+        }
+    }
+
+    /// A string this crate does not recognise is treated as reaching the plugin: that costs
+    /// batching when the substitute is missing, the other direction costs a session that will
+    /// not build. Kept as a test because it is a decision, not a fallthrough.
+    #[test]
+    fn an_unrecognised_device_string_is_assumed_to_reach_the_gpu() {
+        for device in ["gpu", "Gpu", "foobar", "VPU", "FUTURE:GPU"] {
+            assert!(
+                openvino_gpu_plugin(ExecutionMode::OpenVino {
+                    device_type: device
+                }),
+                "{device:?} should be assumed to reach the plugin",
+            );
+        }
+    }
+
+    /// 🔴 Bare `AUTO` keeps the behaviour it has today, deliberately: the stock export, and a
+    /// refusal it survives. Treating it as a GPU would cost a machine with no GPU the batching
+    /// it currently gets, to buy a derived model nobody provisions by default.
+    #[test]
+    fn bare_auto_takes_the_stock_export_and_survives_a_refusal() {
+        let mode = ExecutionMode::OpenVino {
+            device_type: "AUTO",
+        };
+        assert!(
+            !openvino_gpu_plugin(mode),
+            "bare AUTO must not be sent to the derived model",
+        );
+        assert!(
+            tolerates_unbuildable_batched(mode),
+            "bare AUTO may still land on a GPU, so a refusal must cost batching, not the load",
+        );
     }
 
     /// 🔴 Adding a backend must not change the others. A batched export that is present and
