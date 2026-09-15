@@ -220,8 +220,8 @@ impl ExecutionMode {
     ///
     /// Separate from `as_str` rather than replacing it. `as_str` is the backend's name and
     /// is `const`, so it cannot carry a device in the first place, and consumers already branch
-    /// on it and key caches by it. This is the string a log line wants, and the one consumer
-    /// that needed it was building it by hand -- and leaking it -- beside a mode it had just
+    /// on it and key caches by it. This is the string a log line wants, and without it a
+    /// caller that needs it builds it by hand -- and leaks it -- beside a mode it has just
     /// built.
     pub fn label(self) -> String {
         match self {
@@ -799,7 +799,7 @@ mod tests {
     }
 
     /// The point is the second call. A runtime device string has to become `&'static str`
-    /// somehow, and every consumer that did it by hand leaked one per call site; interning
+    /// somehow, and doing that by hand leaks one per call site; interning
     /// bounds the total by how many different devices a process asks for, which is one or two.
     #[test]
     fn the_same_device_string_is_leaked_once() {

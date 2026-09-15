@@ -135,16 +135,16 @@ impl SegmentationModel {
                 // file is derived at startup by the consumer from whatever export is in the
                 // cache, so a new export shape produces a model that passes onnx's checker
                 // and that the GPU plugin then refuses; propagating that takes down every
-                // install on the next weights revision, for a feature whose absence costs
-                // speed and nothing else.
+                // installation that derives it, the next time the weights change, for a
+                // feature whose absence costs speed and nothing else.
                 //
-                // Every other backend keeps the behaviour it had before this fork: the
+                // Every other backend keeps the behaviour it had before this one was added:
                 // error propagates and the load fails. Their batched export ships with the
                 // weights, so one that is present and will not build is a damaged download,
                 // and stopping on it says so where falling back would not. An earlier version
                 // of this fell back on every mode -- a corrupt export on CUDA stopped failing
                 // the load and started costing throughput in silence, which is a change to
-                // backends this fork exists to leave alone.
+                // backends that adding this one must leave alone.
                 //
                 // The same asymmetry, for the same reason, is why the embedding loader does
                 // not fall back at all: nothing derives its exports either.
@@ -306,7 +306,7 @@ impl SegmentationModel {
 /// feature, so a consumer that downloads weights some other way -- which is every consumer
 /// that turns default features off -- has the whole repository in its cache and arrives here
 /// with the stock file present. Deciding this in the download list would decide nothing for
-/// them, this crate's own engine included.
+/// them.
 ///
 /// What it avoids: OpenVINO's GPU plugin generates an LSTM kernel referencing
 /// OUTPUT1_GET_INDEX and OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects
@@ -328,11 +328,11 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
 ///
 /// True for OpenVINO alone, because there the file is written by the consumer at startup
 /// from whatever export is in the cache: a new export shape can pass onnx's checker and still
-/// be refused by the plugin, and propagating that stops every install on the next weights
-/// revision over a feature whose absence costs speed. Every other backend gets the export with
-/// its weights, so present-and-unbuildable is a damaged download and the load should stop on
-/// it -- which is what they did before this fork, and what they must keep doing, since adding
-/// a backend is not a licence to change the others.
+/// be refused by the plugin, and propagating that stops every installation that derives it
+/// the next time the weights change, over a feature whose absence costs speed. Every other
+/// backend gets the export with its weights, so present-and-unbuildable is a damaged download
+/// and the load should stop on it -- which is what they did before this backend existed, and
+/// what they must keep doing: adding a backend is not a licence to change the others.
 ///
 /// Narrowed to the devices that can actually refuse: OpenVINO on the processor or the NPU
 /// loads the stock export that ships with the weights, so present-and-unbuildable is a damaged
@@ -372,10 +372,10 @@ pub fn batched_segmentation_file_name_for(mode: ExecutionMode) -> String {
 /// The file name OpenVINO looks for when it batches segmentation.
 ///
 /// Public because whoever provisions the models has to write this exact name, and it is built
-/// from SEGMENTATION_ONNX and PRIMARY_BATCH_SIZE rather than spelled out. Two consumers had
-/// already spelled it out themselves -- a shell that prepares the file and a binary that
-/// reports whether it is there -- so a change to either constant would have made both of them
-/// quietly wrong, in a direction whose only symptom is batching being off.
+/// from SEGMENTATION_ONNX and PRIMARY_BATCH_SIZE rather than spelled out. Anything that
+/// spells it out instead -- the step that writes the file, and whatever reports that it is
+/// there -- goes quietly wrong the moment either constant changes, in a direction whose only
+/// symptom is batching being off.
 pub fn batched_segmentation_file_name() -> String {
     let stem = SEGMENTATION_ONNX
         .strip_suffix(".onnx")
@@ -429,10 +429,9 @@ mod tests {
         dir
     }
 
-    /// The name the other two consumers produce for the current export. Neither spells it:
-    /// the shell derives it from the batched export it finds in the cache, the engine asks
-    /// this function -- so this pins what all three agree on today, and a change to either
-    /// constant shows up here rather than as batching silently off.
+    /// The name a provisioning step has to produce for the current export. It is built from
+    /// two constants rather than spelled out, so this pins what that name is today: change
+    /// either constant and it shows up here, rather than as batching silently off.
     #[test]
     fn the_prepared_model_is_named_after_the_export_and_the_batch() {
         assert_eq!(
@@ -579,10 +578,11 @@ mod tests {
     }
 
     /// Adding a backend must not change the others. A batched export that is present and
-    /// will not build stopped the load on every backend before this fork; an earlier version
-    /// of this branch made it fall back everywhere, which turned a corrupt file on CUDA from a
-    /// failed start into throughput lost in silence. Only OpenVINO, where the file is derived
-    /// by the consumer rather than shipped with the weights, may fall back.
+    /// will not build stopped the load on every backend before this one was added; an earlier
+    /// version of this work made it fall back everywhere, which turned a corrupt file on CUDA
+    /// from a failed start into throughput lost in silence. Only OpenVINO, where the file is
+    /// derived by whoever provisions the models rather than shipped with the weights, may
+    /// fall back.
     #[test]
     fn only_openvino_survives_a_batched_model_that_will_not_build() {
         // The derived model is written by the consumer and only the GPU plugin refuses it, so
@@ -636,8 +636,9 @@ mod tests {
         ] {
             assert!(
                 !tolerates_unbuildable_batched(mode),
-                "{mode:?} kept this behaviour before this fork and must keep it: a batched \
-                 export that ships with the weights and will not build is a damaged download",
+                "{mode:?} had this behaviour before this backend existed and must keep it: a \
+                 batched export that ships with the weights and will not build is a damaged \
+                 download",
             );
         }
     }
