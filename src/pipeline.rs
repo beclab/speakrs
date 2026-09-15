@@ -168,6 +168,22 @@ impl OwnedDiarizationPipeline {
     }
 
     /// Download models from HuggingFace and build with default config
+    ///
+    /// 🔴 On an OpenVINO device that reaches the GPU plugin, this returns a pipeline whose
+    /// segmentation runs **one window at a time**, and says nothing about it. That plugin
+    /// cannot compile the published batched export -- it emits an LSTM kernel referencing
+    /// `OUTPUT1_GET_INDEX` and `OUTPUT2_GET_INDEX` without declaring them, and the OpenCL
+    /// compiler rejects the program -- so the loader looks for a derivative with a dynamic
+    /// sequence length instead. That derivative is **not published and is not downloaded
+    /// here**: it is written from the stock export by whoever provisions the models, under the
+    /// name [`batched_segmentation_file_name`](crate::inference::batched_segmentation_file_name).
+    ///
+    /// ⚠️ So on that path the weights arrive, the pipeline builds, nothing errors, and the
+    /// throughput is the unbatched one. **Check
+    /// [`segmentation_is_batched`](Self::segmentation_is_batched)** rather than assuming, and
+    /// rather than testing for the file: a file that is present can still be declined.
+    ///
+    /// Intel CPU and NPU are not affected -- they load the published export and batch.
     #[cfg(feature = "online")]
     pub fn from_pretrained(mode: ExecutionMode) -> Result<Self, PipelineError> {
         PipelineBuilder::from_pretrained(mode)?.build()
@@ -212,6 +228,18 @@ pub struct DiarizationPipeline<'a> {
 }
 
 impl<'a> DiarizationPipeline<'a> {
+    /// Whether segmentation runs batched in this pipeline
+    ///
+    /// 🔴 The same answer the owned pipeline gives, because the question is the same one and
+    /// it is the question an OpenVINO GPU install has to ask: the batched model it needs is
+    /// derived outside this crate, so a pipeline that built cleanly may still be running one
+    /// window at a time. Only the owned side could answer it, which left half the callers
+    /// reading the file they wrote instead -- a different question, and one that stopped
+    /// matching the moment a file that is present could be declined.
+    pub fn segmentation_is_batched(&self) -> bool {
+        self.seg_model.is_batched()
+    }
+
     /// Build a pipeline from pre-loaded models and a PLDA parameters directory
     pub fn new(
         seg_model: &'a mut SegmentationModel,

@@ -116,6 +116,28 @@ let result = pipeline.run(&audio)?;
 | `migraphx` | ONNX Runtime MIGraphX | 1s | AMD GPU |
 | `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU |
 
+### OpenVINO: the GPU needs a model nothing downloads
+
+On an Intel **GPU**, OpenVINO cannot compile the published batched segmentation export — its
+plugin emits an LSTM kernel referencing `OUTPUT1_GET_INDEX` and `OUTPUT2_GET_INDEX` without
+declaring them, and the OpenCL compiler rejects the program. The loader looks for a derivative
+with a dynamic sequence length instead, named by `batched_segmentation_file_name()`.
+
+🔴 **That derivative is not published, and `from_pretrained` does not fetch it.** It is written
+from the stock export by whoever provisions the models. Without it the weights still download,
+the pipeline still builds, nothing errors — and segmentation runs **one window at a time**.
+
+So on Intel GPU, **check `segmentation_is_batched()`** rather than assuming, and rather than
+testing whether the file is on disk: a file that is present can still be declined by the plugin.
+
+Intel **CPU** and **NPU** are not affected. They load the published export and batch
+(62.1 ms per window against 529.5 unbatched, measured on the OpenVINO CPU device).
+
+The device string is passed through untouched, so `GPU.1`, `HETERO:NPU,GPU`, `AUTO:GPU,CPU` and
+`BATCH:GPU(4)` all work. Build one from a runtime value with `ExecutionMode::openvino(&str)` —
+the variant holds a `&'static str`, and that constructor interns rather than making every caller
+leak its own.
+
 The `*-fast` modes move the segmentation window every 2 seconds instead of
 every 1 second. That gives the pipeline fewer windows to score, so it can be much faster, but speaker changes
 may land a little farther from the exact word or pause where they happened.

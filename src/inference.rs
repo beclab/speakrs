@@ -5,6 +5,9 @@ pub(crate) mod segmentation;
 /// module itself is crate-private and the name has to be reachable by whoever writes the file.
 pub use segmentation::{batched_segmentation_file_name, batched_segmentation_file_name_for};
 
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+
 #[cfg(all(feature = "load-dynamic", not(target_arch = "wasm32")))]
 use std::ffi::CStr;
 use std::fmt;
@@ -138,6 +141,24 @@ impl ExecutionMode {
             }
         }
 
+        if let Self::OpenVino { device_type } = self {
+            // 🔴 Only the empty string. ONNX Runtime does not check this either -- ort passes
+            // device_type straight into the provider options -- and the set of legal names
+            // lives in ONNX Runtime's C++ side and in OpenVINO, where it grows: AUTO, MULTI,
+            // HETERO and BATCH prefixes, GPU.N positions, a batch size in brackets. Refusing
+            // what this crate does not recognise would refuse a syntax that arrives later,
+            // and it would refuse it here, where nobody can work around it.
+            //
+            // Empty is different: it names no device at all, and the provider's answer to it
+            // is an error a long way from the call that caused it.
+            if device_type.trim().is_empty() {
+                return Err(ExecutionModeError {
+                    mode: self,
+                    feature: "openvino",
+                });
+            }
+        }
+
         if self.is_openvino() {
             #[cfg(feature = "openvino")]
             {
@@ -169,6 +190,47 @@ impl ExecutionMode {
         }
     }
 
+    /// An OpenVINO mode for a device this process discovered at runtime.
+    ///
+    /// 🔴 The device a machine has is not known until the process is on it -- `GPU.0` and
+    /// `GPU.1` are positions, and which one is the discrete card is the machine's business --
+    /// so the string usually arrives from argv, an environment variable, or a probe. The
+    /// variant holds a `&'static str` because `ExecutionMode` is `Copy` and is passed by value
+    /// in dozens of places, which leaves a caller with a runtime string no way in except to
+    /// leak one. Every caller then writes that line itself, and writes it differently.
+    ///
+    /// ⚠️ This leaks too, once per distinct device string, and never frees. A process uses one
+    /// or two, so the total is bounded by how many different devices it is asked for rather
+    /// than by how many times it asks. Repeated calls with the same string reuse the first.
+    pub fn openvino(device: &str) -> Self {
+        static SEEN: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+        let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
+        let mut seen = seen.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let device_type = match seen.get(device) {
+            Some(existing) => existing,
+            None => {
+                let leaked: &'static str = Box::leak(device.to_owned().into_boxed_str());
+                seen.insert(leaked);
+                leaked
+            }
+        };
+        Self::OpenVino { device_type }
+    }
+
+    /// This mode named for a human, with the device when there is one: `openvino:GPU.1`.
+    ///
+    /// 🔴 Separate from `as_str` rather than replacing it. `as_str` is the backend's name and
+    /// is `const`, so it cannot carry a device in the first place, and consumers already branch
+    /// on it and key caches by it. This is the string a log line wants, and the one consumer
+    /// that needed it was building it by hand -- and leaking it -- beside a mode it had just
+    /// built.
+    pub fn label(self) -> String {
+        match self {
+            Self::OpenVino { device_type } => format!("openvino:{device_type}"),
+            other => other.as_str().to_owned(),
+        }
+    }
+
     /// Lowercase identifier used in logs, docs, and user-facing errors
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -186,6 +248,109 @@ impl ExecutionMode {
 impl fmt::Display for ExecutionMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// What an OpenVINO device string resolves to, as far as decisions in this crate are concerned.
+///
+/// 🔴 The split is by decision, not by kind of hardware. `HETERO:NPU,GPU` and `MULTI:CPU,NPU`
+/// are both "several devices", and they want opposite answers: the first reaches the GPU
+/// plugin and the second cannot. What every caller here actually asks is whether the GPU
+/// plugin is in play.
+///
+/// ⚠️ It cannot tell a discrete card from an integrated one. `GPU`, `GPU.0` and `GPU.1` are
+/// positions in a list, not kinds of hardware, and only a caller standing on the machine knows
+/// which is which. Anything that needs the distinction -- the precision the embedding models
+/// are given, for one -- is answered for every GPU or for none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OvTarget {
+    /// `GPU`, `GPU.1`
+    GpuOnly,
+    /// A device list naming a GPU: `HETERO:NPU,GPU`, `AUTO:GPU,CPU`, `BATCH:GPU(4)`
+    GpuComposite,
+    /// A device list naming no GPU: `MULTI:CPU,NPU`
+    NonGpuComposite,
+    /// `CPU`
+    Cpu,
+    /// `NPU`
+    Npu,
+    /// Bare `AUTO` or bare `MULTI`: a decision OpenVINO makes at runtime, on a machine this
+    /// crate cannot see. Kept as its own value rather than folded into either side, because
+    /// what to do about it is a judgement written down at each call site, not a fact.
+    UnresolvedAuto,
+}
+
+/// The device names this crate recognises inside a device string.
+pub(crate) fn ov_device_token(token: &str) -> Option<&'static str> {
+    // 🔴 The batch size comes off first. `BATCH:GPU(4)` sets the batch explicitly -- OpenVINO's
+    // own documentation gives `BATCH:GPU(16)` and `BATCH:CPU(16)` as examples -- so a token
+    // compared whole reads `GPU(4)` as some device that is not a GPU, and the one form whose
+    // whole purpose is batching would be the one that loses it.
+    let token = token.trim();
+    let token = match token.split_once('(') {
+        Some((head, tail)) if tail.ends_with(')') && !tail.is_empty() => head.trim_end(),
+        _ => token,
+    };
+    let base = token.split_once('.').map_or(token, |(head, _)| head);
+    match base {
+        "GPU" => Some("GPU"),
+        "CPU" => Some("CPU"),
+        "NPU" => Some("NPU"),
+        _ => None,
+    }
+}
+
+/// Resolve a device string once, so that every decision below reads the same answer.
+///
+/// The one place `AUTO` / `MULTI` / `HETERO` / `BATCH` / `GPU.1` / a batch size in brackets are
+/// interpreted. A device syntax that arrives later is a change here and nowhere else.
+pub(crate) fn ov_target(device_type: &str) -> OvTarget {
+    let device_type = device_type.trim();
+    match device_type.split_once(':') {
+        Some((prefix, list)) => {
+            let prefix = prefix.trim();
+            if !matches!(prefix, "AUTO" | "MULTI" | "HETERO" | "BATCH") {
+                // Not a form this crate knows. Treated as reaching the plugin: that direction
+                // costs batching when the substitute is missing, the other costs a session
+                // that will not build.
+                return OvTarget::GpuComposite;
+            }
+            if list.split(',').any(|t| ov_device_token(t) == Some("GPU")) {
+                OvTarget::GpuComposite
+            } else if list.trim().is_empty() {
+                OvTarget::UnresolvedAuto
+            } else {
+                OvTarget::NonGpuComposite
+            }
+        }
+        None => match ov_device_token(device_type) {
+            Some("GPU") => OvTarget::GpuOnly,
+            Some("CPU") => OvTarget::Cpu,
+            Some("NPU") => OvTarget::Npu,
+            _ if matches!(device_type, "AUTO" | "MULTI") => OvTarget::UnresolvedAuto,
+            // Same reasoning as the unknown prefix above.
+            _ => OvTarget::GpuComposite,
+        },
+    }
+}
+
+/// Whether this mode reaches OpenVINO's GPU plugin, which is what the substitution above is for.
+///
+/// 🔴 `UnresolvedAuto` is not here. Bare `AUTO` is a legal device string that OpenVINO resolves
+/// on the machine: on a box with no GPU it picks the processor, where the stock export loads
+/// and runs batched at 62.1 ms a window, and sending it to a derived model nobody provisioned
+/// would cost that for nothing. On a box with a GPU it may reach the plugin and be refused --
+/// which is why it IS in `tolerates_unbuildable_batched` below. Guessing towards the stock
+/// export and tolerating the refusal is what this crate already did; naming it is the change.
+pub(crate) fn openvino_gpu_plugin(mode: ExecutionMode) -> bool {
+    match mode {
+        ExecutionMode::OpenVino { device_type } => {
+            matches!(
+                ov_target(device_type),
+                OvTarget::GpuOnly | OvTarget::GpuComposite
+            )
+        }
+        _ => false,
     }
 }
 
@@ -560,6 +725,63 @@ fn dedup_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    /// Empty names no device; anything else is left to ONNX Runtime, whose set of legal
+    /// strings is larger than this crate's and still growing.
+    #[test]
+    fn only_an_empty_device_string_is_refused() {
+        for device in ["", " ", "\t"] {
+            assert!(
+                ExecutionMode::OpenVino {
+                    device_type: device
+                }
+                .validate()
+                .is_err(),
+                "{device:?} names no device",
+            );
+        }
+
+        #[cfg(feature = "openvino")]
+        for device in ["GPU", "AUTO", "BATCH:GPU(4)", "FUTURE:GPU", "gpu"] {
+            assert!(
+                ExecutionMode::OpenVino {
+                    device_type: device
+                }
+                .validate()
+                .is_ok(),
+                "{device:?} is ONNX Runtime's to accept or refuse, not this crate's",
+            );
+        }
+    }
+
+    /// 🔴 The point is the second call. A runtime device string has to become `&'static str`
+    /// somehow, and every consumer that did it by hand leaked one per call site; interning
+    /// bounds the total by how many different devices a process asks for, which is one or two.
+    #[test]
+    fn the_same_device_string_is_leaked_once() {
+        let a = ExecutionMode::openvino("GPU.1");
+        let b = ExecutionMode::openvino(&String::from("GPU.1"));
+        match (a, b) {
+            (
+                ExecutionMode::OpenVino { device_type: x },
+                ExecutionMode::OpenVino { device_type: y },
+            ) => {
+                assert_eq!(x, "GPU.1");
+                assert!(std::ptr::eq(x, y), "asking twice must not leak twice");
+            }
+            other => panic!("{other:?} is not an OpenVINO mode"),
+        }
+    }
+
+    /// A log line wants the device; `as_str` cannot carry it and must not start to.
+    #[test]
+    fn the_label_carries_the_device_and_as_str_does_not() {
+        let mode = ExecutionMode::openvino("GPU.1");
+        assert_eq!(mode.label(), "openvino:GPU.1");
+        assert_eq!(mode.as_str(), "openvino");
+        assert_eq!(ExecutionMode::Cuda.label(), "cuda");
+        assert_eq!(format!("{}", ExecutionMode::Cuda), "cuda");
+    }
+
     #[cfg(any(
         not(feature = "coreml"),
         not(feature = "cuda"),

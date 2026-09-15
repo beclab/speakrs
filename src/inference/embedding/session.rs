@@ -2,17 +2,27 @@ use std::path::Path;
 
 use ort::session::Session;
 
-use crate::inference::{with_execution_mode, with_execution_mode_precision};
+use crate::inference::{openvino_gpu_plugin, with_execution_mode, with_execution_mode_precision};
 
 use super::{EmbeddingModel, ExecutionMode};
 
-/// FP32 for the embedding models on every OpenVINO device, nothing for anyone else.
+/// FP32 for the embedding models on the OpenVINO devices that reach the GPU plugin, nothing
+/// for anyone else.
 ///
-/// Every device, including the integrated GPU and the CPU one, although only a discrete Arc
-/// was measured to need it: the device string says which position, never which kind of card.
-/// Narrowing this needs the caller to say, which none does.
+/// The measurement is a discrete Arc Pro B70, where these models return `CL_OUT_OF_RESOURCES`
+/// out of `clFinish` at the default precision and run correctly at FP32.
+///
+/// ⚠️ It reaches every GPU, not only the discrete one, and that is a limit rather than a
+/// choice: `GPU`, `GPU.0` and `GPU.1` are positions in a list, not kinds of hardware, so
+/// nothing here can tell an integrated part from a card. Narrowing further needs a caller who
+/// says which, and none does. What the published integrated-GPU figures were taken with is
+/// FP32, so they still describe what it does.
+///
+/// 🔴 What changed: OpenVINO on the processor and the NPU no longer get it. Neither was
+/// measured to need it, and neither generates the kernel the discrete card failed in -- they
+/// were being handed a switch that answers a question about a different plugin.
 fn openvino_precision(mode: ExecutionMode) -> Option<&'static str> {
-    mode.is_openvino().then_some("FP32")
+    openvino_gpu_plugin(mode).then_some("FP32")
 }
 
 impl EmbeddingModel {
@@ -112,17 +122,30 @@ mod tests {
         // The whole point is that this is not the pipeline's precision: segmentation goes
         // through the same provider on the same device at the default, and breaks at FP32.
         //
-        // Both devices, deliberately: the measurement behind FP32 is a discrete card's, and
-        // this asserts the wider behaviour the code actually has, so that narrowing it later
-        // is a decision someone makes here rather than a difference nobody notices.
-        assert_eq!(
-            openvino_precision(ExecutionMode::OpenVino { device_type: "GPU" }),
-            Some("FP32")
-        );
-        assert_eq!(
-            openvino_precision(ExecutionMode::OpenVino { device_type: "CPU" }),
-            Some("FP32")
-        );
+        // 🔴 Narrowed here, which is where the previous version of this test asked for the
+        // decision to be made. FP32 answers a failure in the GPU plugin, so it goes to the
+        // devices that reach it and to nobody else.
+        for device in ["GPU", "GPU.1", "HETERO:NPU,GPU", "BATCH:GPU(4)"] {
+            assert_eq!(
+                openvino_precision(ExecutionMode::OpenVino {
+                    device_type: device
+                }),
+                Some("FP32"),
+                "{device:?} reaches the plugin the measurement came from",
+            );
+        }
+
+        // ⚠️ Still every GPU rather than the discrete one: GPU, GPU.0 and GPU.1 are positions,
+        // not kinds of card, and nothing here can tell them apart.
+        for device in ["CPU", "NPU", "MULTI:CPU,NPU"] {
+            assert_eq!(
+                openvino_precision(ExecutionMode::OpenVino {
+                    device_type: device
+                }),
+                None,
+                "{device:?} was never measured to need FP32 and does not use that plugin",
+            );
+        }
 
         for mode in [
             ExecutionMode::Cpu,
