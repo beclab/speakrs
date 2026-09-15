@@ -117,6 +117,19 @@
 //! | `migraphx` | ONNX Runtime MIGraphX | 1s | AMD GPU |
 //! | `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU |
 //!
+//! On an Intel **GPU** that row comes with a condition. OpenVINO's GPU plugin cannot compile
+//! the published batched segmentation export, so the loader looks for a derivative that this
+//! crate neither publishes nor fetches: without it the weights still download, the pipeline
+//! still builds, nothing errors, and segmentation runs one window at a time. Intel CPU and
+//! NPU are unaffected -- they load the published export and batch.
+//!
+//! So on Intel GPU, ask
+//! [`segmentation_is_batched`](OwnedDiarizationPipeline::segmentation_is_batched) rather than
+//! assuming, and rather than testing whether the file is on disk: one that is present can
+//! still be declined by the plugin. [`ExecutionMode::OpenVino`] documents the device string,
+//! and [`inference::batched_segmentation_file_name`] is the name whoever provisions the models has to
+//! write.
+//!
 //! The `*-fast` modes move the segmentation window every 2 seconds instead of
 //! every 1 second. That gives the pipeline fewer windows to score, so it can be much faster, but speaker changes
 //! may land a little farther from the exact word or pause where they happened.

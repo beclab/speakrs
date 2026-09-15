@@ -237,9 +237,9 @@ impl<'a> DiarizationPipeline<'a> {
     /// The same answer the owned pipeline gives, because the question is the same one and
     /// it is the question an OpenVINO GPU install has to ask: the batched model it needs is
     /// derived outside this crate, so a pipeline that built cleanly may still be running one
-    /// window at a time. Only the owned side could answer it, which left half the callers
-    /// reading the file they wrote instead -- a different question, and one that stopped
-    /// matching the moment a file that is present could be declined.
+    /// window at a time. Answered on both pipelines rather than only the owned one, because
+    /// the alternative left here is reading the file back -- a different question, and one
+    /// that stopped matching the moment a file that is present could be declined.
     pub fn segmentation_is_batched(&self) -> bool {
         self.seg_model.is_batched()
     }
