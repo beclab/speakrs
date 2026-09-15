@@ -125,36 +125,44 @@ impl SegmentationModel {
         }
 
         let (session, session_elapsed) = timed!(Self::build_session(model_path, mode)?);
-        let (primary_batched_session, primary_batched_elapsed) = timed!(
-            primary_batched_path(model_path, mode).and_then(|path| {
-                // 🔴 A batched model that will not build turns batching off; it does not stop
-                // the pipeline loading. Absence was already the safe direction to fall, and
-                // this is the same outcome discovered one step later -- but only absence was
-                // handled, because until OpenVINO this file shipped with the weights and
-                // "present" implied "compiles". It is now derived at startup from whatever
-                // export is in the cache, so a new export shape produces a model that passes
-                // onnx's checker and that the GPU plugin then refuses. Propagating that
-                // failure takes down every install on the next weights revision, for a
-                // feature whose absence costs speed and nothing else.
+        let (primary_batched_session, primary_batched_elapsed) =
+            timed!(match primary_batched_path(model_path, mode) {
+                None => None,
+                // 🔴 On OpenVINO a batched model that will not build turns batching off; it
+                // does not stop the pipeline loading. Absence was already the safe direction
+                // to fall, and this is the same outcome discovered one step later. There the
+                // file is derived at startup by the consumer from whatever export is in the
+                // cache, so a new export shape produces a model that passes onnx's checker
+                // and that the GPU plugin then refuses; propagating that takes down every
+                // install on the next weights revision, for a feature whose absence costs
+                // speed and nothing else.
                 //
-                // Not applied to the embedding loader, which builds its own optional batched
-                // sessions the old way. Those exports ship with the weights, so one that is
-                // present and will not build is a damaged download rather than a file a
-                // consumer wrote, and failing on it says so where falling back would not.
-                match Self::build_session(&path, mode) {
-                    Ok(session) => Some(session),
-                    Err(error) => {
-                        tracing::warn!(
-                            model = %path.display(),
-                            %error,
-                            "the batched segmentation model would not build; \
-                             running segmentation one window at a time"
-                        );
-                        None
-                    }
-                }
-            })
-        );
+                // 🔴 Every other backend keeps the behaviour it had before this fork: the
+                // error propagates and the load fails. Their batched export ships with the
+                // weights, so one that is present and will not build is a damaged download,
+                // and stopping on it says so where falling back would not. An earlier version
+                // of this fell back on every mode -- a corrupt export on CUDA stopped failing
+                // the load and started costing throughput in silence, which is a change to
+                // backends this fork exists to leave alone.
+                //
+                // The same asymmetry, for the same reason, is why the embedding loader does
+                // not fall back at all: nothing derives its exports either.
+                Some(path) => Self::build_session(&path, mode)
+                    .map(Some)
+                    .or_else(|error| {
+                        if tolerates_unbuildable_batched(mode) {
+                            tracing::warn!(
+                                model = %path.display(),
+                                %error,
+                                "the batched segmentation model would not build; \
+                                 running segmentation one window at a time"
+                            );
+                            Ok(None)
+                        } else {
+                            Err(error)
+                        }
+                    })?,
+            });
         #[cfg(feature = "coreml")]
         let (native_session, native_session_elapsed) =
             timed!(Self::load_native_coreml(model_path, mode)?);
@@ -314,6 +322,26 @@ fn primary_batched_path(model_path: &Path, mode: ExecutionMode) -> Option<PathBu
     batched_model_path(model_path, PRIMARY_BATCH_SIZE).filter(|path| path.exists())
 }
 
+/// Whether a batched segmentation model that is present and will not build costs this mode
+/// only its batching, rather than its load.
+///
+/// 🔴 True for OpenVINO alone, because there the file is written by the consumer at startup
+/// from whatever export is in the cache: a new export shape can pass onnx's checker and still
+/// be refused by the plugin, and propagating that stops every install on the next weights
+/// revision over a feature whose absence costs speed. Every other backend gets the export with
+/// its weights, so present-and-unbuildable is a damaged download and the load should stop on
+/// it -- which is what they did before this fork, and what they must keep doing, since adding
+/// a backend is not a licence to change the others.
+///
+/// ⚠️ Still wider than the defect: only OpenVINO's *GPU* plugin refuses the derived model, and
+/// OpenVINO on the processor or the NPU loads the stock export that ships with the weights --
+/// the damaged-download case again. Narrowing it to the GPU needs the device string resolved,
+/// and `contains("GPU")` does not resolve `AUTO`. Left at the backend until that is decided,
+/// because a wrong narrowing costs a load and this width costs only silence on two devices.
+fn tolerates_unbuildable_batched(mode: ExecutionMode) -> bool {
+    mode.is_openvino()
+}
+
 /// Whether this mode reaches OpenVINO's GPU plugin, which is what the substitution above is for.
 ///
 /// 🔴 The device, not the backend. The kernel that cannot be compiled is generated by the GPU
@@ -451,6 +479,43 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// 🔴 Adding a backend must not change the others. A batched export that is present and
+    /// will not build stopped the load on every backend before this fork; an earlier version
+    /// of this branch made it fall back everywhere, which turned a corrupt file on CUDA from a
+    /// failed start into throughput lost in silence. Only OpenVINO, where the file is derived
+    /// by the consumer rather than shipped with the weights, may fall back.
+    #[test]
+    fn only_openvino_survives_a_batched_model_that_will_not_build() {
+        for mode in [
+            ExecutionMode::OpenVino { device_type: "GPU" },
+            ExecutionMode::OpenVino { device_type: "CPU" },
+            ExecutionMode::OpenVino { device_type: "NPU" },
+            ExecutionMode::OpenVino {
+                device_type: "HETERO:NPU,GPU",
+            },
+        ] {
+            assert!(
+                tolerates_unbuildable_batched(mode),
+                "{mode:?} must degrade rather than fail: nothing ships it a batched export",
+            );
+        }
+
+        for mode in [
+            ExecutionMode::Cpu,
+            ExecutionMode::Cuda,
+            ExecutionMode::CudaFast,
+            ExecutionMode::MiGraphX,
+            ExecutionMode::CoreMl,
+            ExecutionMode::CoreMlFast,
+        ] {
+            assert!(
+                !tolerates_unbuildable_batched(mode),
+                "{mode:?} kept this behaviour before this fork and must keep it: a batched \
+                 export that ships with the weights and will not build is a damaged download",
+            );
+        }
+    }
+
     #[test]
     fn openvino_never_takes_the_stock_batched_model() {
         let dir = models_dir_with_batched("openvino");
@@ -465,7 +530,12 @@ mod tests {
         // that cannot be compiled there, so picking it up would be the crash this path avoids.
         for device in ["GPU", "GPU.0", "GPU.1", "HETERO:NPU,GPU", "AUTO:GPU,CPU"] {
             assert_eq!(
-                primary_batched_path(&model, ExecutionMode::OpenVino { device_type: device }),
+                primary_batched_path(
+                    &model,
+                    ExecutionMode::OpenVino {
+                        device_type: device
+                    }
+                ),
                 None,
                 "{device} reaches the GPU plugin and must not take the stock export",
             );
@@ -477,7 +547,12 @@ mod tests {
         // per window, against 529.5 one window at a time. Refusing it there traded a 8.5x for a
         // file somebody else has to write.
         for device in ["CPU", "NPU"] {
-            let taken = primary_batched_path(&model, ExecutionMode::OpenVino { device_type: device });
+            let taken = primary_batched_path(
+                &model,
+                ExecutionMode::OpenVino {
+                    device_type: device,
+                },
+            );
             assert_eq!(
                 taken,
                 Some(dir.join(format!("segmentation-3.0-b{PRIMARY_BATCH_SIZE}.onnx"))),

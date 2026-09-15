@@ -5,9 +5,14 @@ on:
   push:
     branches:
       - master
+  # 🔴 beclab-master too, or this fork's own pull requests run nothing. Every branch here
+  # targets beclab-master -- master is kept as a mirror of upstream -- so a trigger listing
+  # only master meant #1 sat with zero checks while the reviews it went through called its
+  # tests green on the strength of one laptop.
   pull_request:
     branches:
       - master
+      - beclab-master
 
 permissions:
   contents: read
