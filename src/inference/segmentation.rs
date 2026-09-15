@@ -497,8 +497,51 @@ mod tests {
             ("AUTO", OvTarget::UnresolvedAuto),
             ("MULTI", OvTarget::UnresolvedAuto),
             (" GPU ", OvTarget::GpuOnly),
+            // A list carrying a name this crate cannot read is not a list without a GPU.
+            ("AUTO:-CPU", OvTarget::GpuComposite),
+            ("MULTI:-CPU", OvTarget::GpuComposite),
+            ("AUTO:BATCH:GPU(4)", OvTarget::GpuComposite),
         ] {
             assert_eq!(ov_target(device), want, "{device:?}");
+        }
+    }
+
+    /// 🔴 `NonGpuComposite` is the only answer that both takes the stock export and declines to
+    /// survive its refusal, so it is claimed only when every name in the list was read. Reaching
+    /// it by finding no GPU cannot tell "this list names no GPU" from "this list holds a name I
+    /// cannot read" -- and `AUTO:-CPU`, OpenVINO's documented way to ask for everything except
+    /// the processor, is the second. On an Intel machine that is how you ask for the card, so
+    /// the direction that fold takes is: the string asking for the GPU most plainly is the one
+    /// that fails to load.
+    ///
+    /// The two readable rows are here to hold the other edge. Widening this to "assume GPU
+    /// whenever no GPU was named" would send `MULTI:CPU,NPU` to a derived model nobody
+    /// provisions on a processor, and cost it the batching it has today.
+    #[test]
+    fn a_device_list_this_cannot_read_is_not_a_list_without_a_gpu() {
+        for device in ["AUTO:-CPU", "MULTI:-CPU", "AUTO:BATCH:GPU(4)", "AUTO:GPU("] {
+            let mode = ExecutionMode::OpenVino {
+                device_type: device,
+            };
+            assert!(
+                openvino_gpu_plugin(mode),
+                "{device:?} holds a name this crate cannot read, so it must be assumed to \
+                 reach the plugin",
+            );
+            assert!(
+                tolerates_unbuildable_batched(mode),
+                "{device:?} must survive a batched model the plugin refuses, not fail the load",
+            );
+        }
+
+        for device in ["MULTI:CPU,NPU", "BATCH:CPU(16)"] {
+            let mode = ExecutionMode::OpenVino {
+                device_type: device,
+            };
+            assert!(
+                !openvino_gpu_plugin(mode),
+                "{device:?} names only devices this crate read, and none is a GPU",
+            );
         }
     }
 

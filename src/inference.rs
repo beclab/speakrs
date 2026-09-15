@@ -265,9 +265,18 @@ impl fmt::Display for ExecutionMode {
 pub(crate) enum OvTarget {
     /// `GPU`, `GPU.1`
     GpuOnly,
-    /// A device list naming a GPU: `HETERO:NPU,GPU`, `AUTO:GPU,CPU`, `BATCH:GPU(4)`
+    /// A device list that may reach the GPU plugin: `HETERO:NPU,GPU`, `AUTO:GPU,CPU`,
+    /// `BATCH:GPU(4)`
+    ///
+    /// Also where anything unreadable lands -- an unknown prefix, a name this crate cannot
+    /// parse -- because that is the cheaper way to be wrong. So this says "may reach the GPU
+    /// plugin", not "names a GPU": `NonGpuComposite` is the one that makes a claim.
     GpuComposite,
-    /// A device list naming no GPU: `MULTI:CPU,NPU`
+    /// A device list whose every name was read, and none of them a GPU: `MULTI:CPU,NPU`
+    ///
+    /// 🔴 Every name read, not merely no GPU found. A list holding a name this crate cannot
+    /// read is not this: see `ov_target` for why the difference decides whether a machine
+    /// loads at all.
     NonGpuComposite,
     /// `CPU`
     Cpu,
@@ -314,12 +323,25 @@ pub(crate) fn ov_target(device_type: &str) -> OvTarget {
                 // that will not build.
                 return OvTarget::GpuComposite;
             }
-            if list.split(',').any(|t| ov_device_token(t) == Some("GPU")) {
-                OvTarget::GpuComposite
-            } else if list.trim().is_empty() {
+            if list.trim().is_empty() {
                 OvTarget::UnresolvedAuto
-            } else {
+            } else if list.split(',').any(|t| ov_device_token(t) == Some("GPU")) {
+                OvTarget::GpuComposite
+            } else if list.split(',').all(|t| ov_device_token(t).is_some()) {
                 OvTarget::NonGpuComposite
+            } else {
+                // 🔴 `NonGpuComposite` is claimed only when every name in the list was read.
+                // Reaching it by finding no GPU folds together two lists that look identical
+                // from here: one that names no GPU, and one carrying a name this crate cannot
+                // read. `AUTO:-CPU` is the second -- OpenVINO's documented way to say "choose
+                // automatically, minus the CPU", which on an Intel machine is how you ask for
+                // the card -- and `NonGpuComposite` is the one answer that both takes the
+                // stock export and declines to survive its refusal, so the string that asks
+                // for the GPU most plainly would be the one that fails to load.
+                //
+                // Same direction as the unknown prefix above, for the same reason: unreadable
+                // costs batching when the substitute is missing, and the load when it is not.
+                OvTarget::GpuComposite
             }
         }
         None => match ov_device_token(device_type) {
