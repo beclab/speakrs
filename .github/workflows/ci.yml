@@ -96,6 +96,35 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}" -- -D warnings
 
+  check-every-backend:
+    name: Check every backend at once (macOS arm64)
+    # No row above ever has all four accelerated features on together: the Linux x86_64 row takes
+    # openvino and leaves out coreml, the macOS row does the reverse. A `cfg` that is false only
+    # when all four are on therefore compiles in every place CI looks, and nowhere else. One such
+    # guard sat on a test module's import -- `any(not(coreml), not(cuda), not(migraphx),
+    # not(openvino))` -- while two tests beside it were unconditional, so the whole module stopped
+    # compiling with the full set enabled. Twelve errors, invisible to all three rows.
+    #
+    # `check` rather than `clippy`, deliberately: what this catches is code that does not build,
+    # and running clippy here would also fail on lints that came with the toolchain rather than
+    # with a change. macOS because coreml builds nowhere else, and load-dynamic because no
+    # provider library has to be present to type-check against one.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          prefix-key: v1-rust
+
+      - name: cargo check with every backend enabled
+        run: cargo check --workspace --all-targets --features "coreml cuda migraphx openvino load-dynamic _metrics"
+
   test:
     name: Test (${{ matrix.name }})
     strategy:
