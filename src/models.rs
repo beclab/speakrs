@@ -202,14 +202,15 @@ fn required_files(mode: ExecutionMode) -> Vec<String> {
             files.push("wespeaker-multimask-tail-b32.onnx".to_string());
             // batched seg/emb models
             //
-            // Downloaded on OpenVINO too, and not because OpenVINO loads it -- it cannot.
-            // Its GPU plugin generates an LSTM kernel referencing OUTPUT1_GET_INDEX and
-            // OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects the
-            // program, and the session never builds. It is here because it is the source the
-            // model OpenVINO does load is derived from: `-b32-dynseq`, the same export with
-            // its sample dimension made dynamic, which is what the load site looks for. Drop
-            // this file from the list and that derivative cannot be produced at all, so
-            // batching is off with nothing saying why.
+            // Downloaded on OpenVINO too, for two reasons rather than one. Its CPU and NPU
+            // plugins load this file and batch from it, exactly as CUDA and MIGraphX do. Its
+            // GPU plugin cannot: it generates an LSTM kernel referencing OUTPUT1_GET_INDEX
+            // and OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects the
+            // program, and the session never builds -- so there this file is not what loads
+            // but what the model that loads is derived from, `-b32-dynseq`, the same export
+            // with its sample dimension made dynamic. Drop it from the list and the processor
+            // and the NPU lose batching outright, while the GPU loses the only thing its
+            // derivative can be made from; nothing says why in either case.
             files.push("segmentation-3.0-b32.onnx".to_string());
             files.push("wespeaker-voxceleb-resnet34-b64.onnx".to_string());
         }
@@ -274,14 +275,17 @@ mod tests {
         let openvino = required_files(ExecutionMode::OpenVino { device_type: "GPU" });
 
         // Named rather than only compared as a whole, because this one file is the one a
-        // reader expects to be missing: OpenVINO cannot compile it. It is fetched anyway --
-        // it is what the `-dynseq` derivative the load site looks for is made from, and
-        // without it that derivative cannot exist, so batching would be off for good.
+        // reader expects to be missing on the device asked for here: the GPU plugin cannot
+        // compile it. It is fetched anyway, and for the GPU it is what the `-dynseq`
+        // derivative the load site looks for is made from -- without it that derivative
+        // cannot exist, so batching would be off for good. The list is the same for every
+        // OpenVINO device, and on the processor and the NPU this file is loaded directly.
         assert!(openvino.contains(&"segmentation-3.0-b32.onnx".to_string()));
         assert!(openvino.contains(&"segmentation-3.0.onnx".to_string()));
 
-        // And no other divergence has crept in: the kernel OpenVINO trips over is an LSTM
-        // one, only segmentation has an LSTM, and that is handled where sessions are built.
+        // And no other divergence has crept in: the kernel the GPU plugin trips over is an
+        // LSTM one, only segmentation has an LSTM, and that is handled where sessions are
+        // built.
         assert_eq!(openvino, required_files(ExecutionMode::MiGraphX));
     }
 
