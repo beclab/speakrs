@@ -369,10 +369,14 @@ pub fn batched_segmentation_file_name_for(mode: ExecutionMode) -> String {
     format!("{stem}-b{PRIMARY_BATCH_SIZE}.onnx")
 }
 
-/// The file name OpenVINO looks for when it batches segmentation.
+/// The file name OpenVINO's **GPU plugin** looks for when it batches segmentation.
 ///
-/// Public because whoever provisions the models has to write this exact name, and it is built
-/// from SEGMENTATION_ONNX and PRIMARY_BATCH_SIZE rather than spelled out. Anything that
+/// Not the file every OpenVINO device looks for. On the processor and the NPU the loader takes
+/// the stock export that ships with the weights, and `batched_segmentation_file_name_for` is
+/// the one that answers per mode. This is the derivative, and the name is the same on the
+/// devices that use it as it is on the step that writes it -- which is why it is public.
+///
+/// Built from SEGMENTATION_ONNX and PRIMARY_BATCH_SIZE rather than spelled out. Anything that
 /// spells it out instead -- the step that writes the file, and whatever reports that it is
 /// there -- goes quietly wrong the moment either constant changes, in a direction whose only
 /// symptom is batching being off.

@@ -115,7 +115,7 @@
 //! | `cuda` | ONNX Runtime CUDA | 1s | NVIDIA GPU |
 //! | `cuda-fast` | ONNX Runtime CUDA | 2s | NVIDIA GPU for higher throughput |
 //! | `migraphx` | ONNX Runtime MIGraphX | 1s | AMD GPU |
-//! | `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU |
+//! | `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU. **On GPU, batching has a condition -- see below** |
 //!
 //! On an Intel **GPU** that row comes with a condition. OpenVINO's GPU plugin cannot compile
 //! the published batched segmentation export, so the loader looks for a derivative that this

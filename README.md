@@ -114,15 +114,16 @@ let result = pipeline.run(&audio)?;
 | `cuda` | ONNX Runtime CUDA | 1s | NVIDIA GPU |
 | `cuda-fast` | ONNX Runtime CUDA | 2s | NVIDIA GPU for higher throughput |
 | `migraphx` | ONNX Runtime MIGraphX | 1s | AMD GPU |
-| `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU |
+| `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU. **On GPU, batching has a condition -- see below** |
 
 ### OpenVINO: the GPU needs a model nothing downloads
 
 On an Intel **GPU**, OpenVINO cannot compile the published batched segmentation export — its
 plugin emits an LSTM kernel referencing `OUTPUT1_GET_INDEX` and `OUTPUT2_GET_INDEX` without
 declaring them, and the OpenCL compiler rejects the program. The loader looks for a derivative
-with a dynamic sequence length instead, named by `inference::batched_segmentation_file_name()` -- the crate root re-exports
-`ExecutionMode`, but not this.
+with a dynamic sequence length instead, named by `inference::batched_segmentation_file_name()`.
+That one is reached through the `inference` module; the crate root re-exports `ExecutionMode`
+but not it.
 
 **That derivative is not published, and `from_pretrained` does not fetch it.** It is written
 from the stock export by whoever provisions the models. Without it the weights still download,
