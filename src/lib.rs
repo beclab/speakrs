@@ -26,6 +26,9 @@
 //!
 //! # AMD GPU
 //! speakrs = { version = "0.5", features = ["migraphx"] }
+//!
+//! # Intel CPU, GPU or NPU -- not in a published release yet, so by git
+//! speakrs = { git = "https://github.com/beclab/speakrs", branch = "beclab-master", features = ["openvino"] }
 //! ```
 //!
 //! ## Quick start
@@ -112,6 +115,20 @@
 //! | `cuda` | ONNX Runtime CUDA | 1s | NVIDIA GPU |
 //! | `cuda-fast` | ONNX Runtime CUDA | 2s | NVIDIA GPU for higher throughput |
 //! | `migraphx` | ONNX Runtime MIGraphX | 1s | AMD GPU |
+//! | `openvino` | ONNX Runtime OpenVINO | 1s | Intel CPU, integrated or discrete GPU, NPU |
+//!
+//! On an Intel **GPU** that row comes with a condition. OpenVINO's GPU plugin cannot compile
+//! the published batched segmentation export, so the loader looks for a derivative that this
+//! crate neither publishes nor fetches: without it the weights still download, the pipeline
+//! still builds, nothing errors, and segmentation runs one window at a time. Intel CPU and
+//! NPU are unaffected -- they load the published export and batch.
+//!
+//! So on Intel GPU, ask
+//! [`segmentation_is_batched`](OwnedDiarizationPipeline::segmentation_is_batched) rather than
+//! assuming, and rather than testing whether the file is on disk: one that is present can
+//! still be declined by the plugin. [`ExecutionMode::OpenVino`] documents the device string,
+//! and [`inference::batched_segmentation_file_name`] is the name whoever provisions the models has to
+//! write.
 //!
 //! The `*-fast` modes move the segmentation window every 2 seconds instead of
 //! every 1 second. That gives the pipeline fewer windows to score, so it can be much faster, but speaker changes
@@ -174,6 +191,7 @@
 //! - `coreml`: native CoreML backend on macOS
 //! - `cuda`: NVIDIA CUDA backend via ONNX Runtime
 //! - `migraphx`: AMD GPU backend via ONNX Runtime MIGraphX
+//! - `openvino`: Intel CPU, GPU and NPU backend via ONNX Runtime OpenVINO
 //! - `load-dynamic`: load the ONNX Runtime library at startup instead of static linking
 //!
 //! BLAS backends matter if you disable default features:

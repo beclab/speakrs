@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "online")]
 use crate::inference::ExecutionMode;
 
-const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
+/// The segmentation model's file name, public because a consumer that provisions or probes
+/// models on its own has to name this file too, and did so by spelling it.
+pub const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
 const EMBEDDING_ONNX: &str = "wespeaker-voxceleb-resnet34.onnx";
 
 /// Resolved model paths for the speakrs pipeline
@@ -188,7 +190,10 @@ fn required_files(mode: ExecutionMode) -> Vec<String> {
         ExecutionMode::Cpu => {
             files.extend(ONNX_FILES.iter().map(|s| s.to_string()));
         }
-        ExecutionMode::Cuda | ExecutionMode::CudaFast | ExecutionMode::MiGraphX => {
+        ExecutionMode::Cuda
+        | ExecutionMode::CudaFast
+        | ExecutionMode::MiGraphX
+        | ExecutionMode::OpenVino { .. } => {
             files.extend(ONNX_FILES.iter().map(|s| s.to_string()));
             // split models for multi-mask embedding (CPU fbank + GPU multi-mask)
             files.push("wespeaker-fbank.onnx".to_string());
@@ -196,6 +201,15 @@ fn required_files(mode: ExecutionMode) -> Vec<String> {
             files.push("wespeaker-multimask-tail.onnx".to_string());
             files.push("wespeaker-multimask-tail-b32.onnx".to_string());
             // batched seg/emb models
+            //
+            // Downloaded on OpenVINO too, and not because OpenVINO loads it -- it cannot.
+            // Its GPU plugin generates an LSTM kernel referencing OUTPUT1_GET_INDEX and
+            // OUTPUT2_GET_INDEX without defining them, the OpenCL compiler rejects the
+            // program, and the session never builds. It is here because it is the source the
+            // model OpenVINO does load is derived from: `-b32-dynseq`, the same export with
+            // its sample dimension made dynamic, which is what the load site looks for. Drop
+            // this file from the list and that derivative cannot be produced at all, so
+            // batching is off with nothing saying why.
             files.push("segmentation-3.0-b32.onnx".to_string());
             files.push("wespeaker-voxceleb-resnet34-b64.onnx".to_string());
         }
@@ -253,6 +267,22 @@ mod tests {
         assert!(files.contains(&"segmentation-3.0-w8a16.mlmodelc/model.mil".to_string()));
         assert!(files.contains(&"segmentation-3.0-b64-w8a16.mlmodelc/model.mil".to_string()));
         assert!(files.contains(&"wespeaker-chunk-emb-s25-w56.mlmodelc/model.mil".to_string()));
+    }
+
+    #[test]
+    fn openvino_required_files_are_the_accelerated_set() {
+        let openvino = required_files(ExecutionMode::OpenVino { device_type: "GPU" });
+
+        // Named rather than only compared as a whole, because this one file is the one a
+        // reader expects to be missing: OpenVINO cannot compile it. It is fetched anyway --
+        // it is what the `-dynseq` derivative the load site looks for is made from, and
+        // without it that derivative cannot exist, so batching would be off for good.
+        assert!(openvino.contains(&"segmentation-3.0-b32.onnx".to_string()));
+        assert!(openvino.contains(&"segmentation-3.0.onnx".to_string()));
+
+        // And no other divergence has crept in: the kernel OpenVINO trips over is an LSTM
+        // one, only segmentation has an LSTM, and that is handled where sessions are built.
+        assert_eq!(openvino, required_files(ExecutionMode::MiGraphX));
     }
 
     #[test]
