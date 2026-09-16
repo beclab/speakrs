@@ -5,14 +5,9 @@ on:
   push:
     branches:
       - master
-  # 🔴 beclab-master too, or this fork's own pull requests run nothing. Every branch here
-  # targets beclab-master -- master is kept as a mirror of upstream -- so a trigger listing
-  # only master left #1 with zero checks while its reviews called the tests green on the
-  # strength of one laptop.
-  #
-  # Split out of that branch and sent here first on purpose: GitHub reads the trigger from the
-  # workflow on the BASE branch, so the fix cannot switch itself on from inside the pull
-  # request that carries it.
+  # beclab-master too, or this fork's own pull requests run nothing. Why, and why the line
+  # had to reach the base branch before it could switch itself on, is written out once beside
+  # the same trigger in ci.yml rather than twice.
   pull_request:
     branches:
       - master
