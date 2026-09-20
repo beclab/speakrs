@@ -6,7 +6,8 @@ mod layout;
 pub(crate) use data::FrameActivations;
 pub use data::{
     BatchInput, ChunkEmbeddings, ChunkSpeakerClusters, DecodedSegmentations, DiarizationResult,
-    DiscreteDiarization, InferenceArtifacts, SpeakerCountTrack,
+    DiscreteDiarization, ExclusiveFrameDecision, ExclusiveFrameEvidence, FrameSpeakerSupport,
+    InferenceArtifacts, ScoreAwareExclusiveDiarization, SpeakerCountTrack,
 };
 pub(super) use data::{
     EmbeddingPath, InferencePath, PendingEmbedding, PendingSplitEmbedding, RawSegmentationWindows,

@@ -10,8 +10,8 @@ use super::config::PipelineConfig;
 use super::post_inference::post_inference;
 use super::types::{
     BatchInput, ChunkEmbeddings, ChunkLayout, ChunkSpeakerClusters, DecodedSegmentations,
-    DiarizationResult, DiscreteDiarization, InferenceArtifacts, PipelineError, SpeakerCountTrack,
-    chunk_audio_raw,
+    DiarizationResult, DiscreteDiarization, FrameSpeakerSupport, InferenceArtifacts, PipelineError,
+    SpeakerCountTrack, chunk_audio_raw,
 };
 use super::write_speaker_mask_to_slice;
 
@@ -407,6 +407,7 @@ pub(super) fn try_batch_chunk_embedding(
                     speaker_count: SpeakerCountTrack(Vec::new()),
                     hard_clusters: ChunkSpeakerClusters(Array2::zeros((0, 0))),
                     discrete_diarization: DiscreteDiarization(Array2::zeros((0, 0))),
+                    frame_speaker_support: FrameSpeakerSupport(Array2::zeros((0, 0))),
                     segments: Vec::new(),
                 })
             })
