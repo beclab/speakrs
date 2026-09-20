@@ -14,7 +14,8 @@ mod types;
 pub(crate) use types::FrameActivations;
 pub use types::{
     BatchInput, ChunkEmbeddings, ChunkSpeakerClusters, DecodedSegmentations, DiarizationResult,
-    DiscreteDiarization, InferenceArtifacts, PipelineError, SpeakerCountTrack,
+    DiscreteDiarization, ExclusiveFrameDecision, ExclusiveFrameEvidence, FrameSpeakerSupport,
+    InferenceArtifacts, PipelineError, ScoreAwareExclusiveDiarization, SpeakerCountTrack,
 };
 use types::{ChunkLayout, EmbeddingPath, InferencePath, RawSegmentationWindows};
 #[cfg(test)]

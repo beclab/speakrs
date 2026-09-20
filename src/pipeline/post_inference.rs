@@ -8,7 +8,8 @@ use crate::segment::merge_segments;
 
 use super::config::{PipelineConfig, ReconstructMethod};
 use super::types::{
-    ChunkSpeakerClusters, DiarizationResult, DiscreteDiarization, InferenceArtifacts, PipelineError,
+    ChunkSpeakerClusters, DiarizationResult, DiscreteDiarization, FrameSpeakerSupport,
+    InferenceArtifacts, PipelineError,
 };
 
 /// Run clustering and reconstruction on pre-computed inference artifacts
@@ -35,6 +36,7 @@ pub fn post_inference(
             speaker_count,
             hard_clusters: ChunkSpeakerClusters(Array2::zeros((0, 0))),
             discrete_diarization: DiscreteDiarization(Array2::zeros((0, 0))),
+            frame_speaker_support: FrameSpeakerSupport(Array2::zeros((0, 0))),
             segments: Vec::new(),
         });
     }
@@ -44,6 +46,7 @@ pub fn post_inference(
 
     let reconstructor =
         Reconstructor::with_clusters(&segmentations, &hard_clusters, &layout.start_frames, 0);
+    let frame_speaker_support = reconstructor.frame_activations(&speaker_count);
     let discrete_diarization = match config.reconstruct_method {
         ReconstructMethod::Smoothed { epsilon } => {
             reconstructor.reconstruct_smoothed(&speaker_count, epsilon)
@@ -74,6 +77,7 @@ pub fn post_inference(
         speaker_count,
         hard_clusters,
         discrete_diarization,
+        frame_speaker_support: FrameSpeakerSupport(frame_speaker_support.0),
         segments,
     })
 }
