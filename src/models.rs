@@ -3,6 +3,10 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "online")]
 use crate::inference::ExecutionMode;
 
+#[cfg(all(test, feature = "online"))]
+#[path = "models_openvino_tests.rs"]
+mod openvino_tests;
+
 /// The segmentation model's file name, public because a consumer that provisions or probes
 /// models on its own has to name this file too, and did so by spelling it.
 pub const SEGMENTATION_ONNX: &str = "segmentation-3.0.onnx";
@@ -268,25 +272,6 @@ mod tests {
         assert!(files.contains(&"segmentation-3.0-w8a16.mlmodelc/model.mil".to_string()));
         assert!(files.contains(&"segmentation-3.0-b64-w8a16.mlmodelc/model.mil".to_string()));
         assert!(files.contains(&"wespeaker-chunk-emb-s25-w56.mlmodelc/model.mil".to_string()));
-    }
-
-    #[test]
-    fn openvino_required_files_are_the_accelerated_set() {
-        let openvino = required_files(ExecutionMode::OpenVino { device_type: "GPU" });
-
-        // Named rather than only compared as a whole, because this one file is the one a
-        // reader expects to be missing on the device asked for here: the GPU plugin cannot
-        // compile it. It is fetched anyway, and for the GPU it is what the `-dynseq`
-        // derivative the load site looks for is made from -- without it that derivative
-        // cannot exist, so batching would be off for good. The list is the same for every
-        // OpenVINO device, and on the processor and the NPU this file is loaded directly.
-        assert!(openvino.contains(&"segmentation-3.0-b32.onnx".to_string()));
-        assert!(openvino.contains(&"segmentation-3.0.onnx".to_string()));
-
-        // And no other divergence has crept in: the kernel the GPU plugin trips over is an
-        // LSTM one, only segmentation has an LSTM, and that is handled where sessions are
-        // built.
-        assert_eq!(openvino, required_files(ExecutionMode::MiGraphX));
     }
 
     #[test]

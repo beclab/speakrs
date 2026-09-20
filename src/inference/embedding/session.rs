@@ -8,6 +8,10 @@ use crate::inference::{
 
 use super::{EmbeddingModel, ExecutionMode};
 
+#[cfg(test)]
+#[path = "session_openvino_tests.rs"]
+mod openvino_tests;
+
 /// FP32 for the embedding models on the OpenVINO devices that reach the GPU plugin, nothing
 /// for anyone else.
 ///
@@ -114,7 +118,3 @@ impl EmbeddingModel {
         Self::build_session(model_path, Self::single_execution_mode(mode))
     }
 }
-
-#[cfg(test)]
-#[path = "session_openvino_tests.rs"]
-mod openvino_tests;

@@ -4,7 +4,7 @@
 //! never land on the same lines. See CONTRIBUTING notes on staying mergeable with upstream.
 
 use super::*;
-use crate::inference::{OvTarget, ov_target};
+use crate::inference::{OvTarget, openvino_gpu_plugin, ov_target};
 
 /// A directory holding an empty file named like the batched segmentation model. The
 /// decision under test reads the name and whether the path exists, never the bytes.

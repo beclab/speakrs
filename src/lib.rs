@@ -247,10 +247,13 @@ pub use models::ModelBundle;
 pub use models::ModelManager;
 pub use pipeline::{
     AhcConfig, BatchInput, BinarizeConfig, DiarizationPipeline, DiarizationResult,
-    ExclusiveFrameDecision, ExclusiveFrameEvidence, FrameSpeakerSupport, OwnedDiarizationPipeline,
-    PipelineBuilder, PipelineConfig, PipelineError, QueueError, QueueReceiver, QueueReceiverIter,
-    QueueSender, QueuedDiarizationJobId, QueuedDiarizationRequest, QueuedDiarizationResult,
-    RuntimeConfig, ScoreAwareExclusiveDiarization, VbxConfig,
+    OwnedDiarizationPipeline, PipelineBuilder, PipelineConfig, PipelineError, QueueError,
+    QueueReceiver, QueueReceiverIter, QueueSender, QueuedDiarizationJobId,
+    QueuedDiarizationRequest, QueuedDiarizationResult, RuntimeConfig, VbxConfig,
+};
+pub use pipeline::{
+    ExclusiveFrameDecision, ExclusiveFrameEvidence, FrameSpeakerSupport,
+    ScoreAwareExclusiveDiarization,
 };
 pub use segment::Segment;
 
