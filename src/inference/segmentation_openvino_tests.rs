@@ -1,7 +1,7 @@
 //! Which segmentation export each execution mode loads, and who may fall back without it.
 //!
 //! Kept out of the shared `mod tests` block so that upstream's test additions and ours
-//! never land on the same lines. See CONTRIBUTING notes on staying mergeable with upstream.
+//! never land on the same lines. `FORK.md` says why, once.
 
 use super::*;
 use crate::inference::{OvTarget, openvino_gpu_plugin, ov_target};

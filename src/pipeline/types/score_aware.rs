@@ -2,7 +2,7 @@
 //! binary mask, and the per-frame evidence for how each speaker was chosen.
 //!
 //! Their own file, not a block inside `data.rs`, so that upstream's edits to that file and
-//! ours never land on the same lines.
+//! ours never land on the same lines.`FORK.md` says why, once.
 
 use std::ops::Deref;
 

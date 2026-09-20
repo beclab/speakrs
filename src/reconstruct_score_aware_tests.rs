@@ -1,7 +1,7 @@
 //! How the score-aware exclusive reconstruction picks a speaker, and what it does on a tie.
 //!
 //! Kept out of the shared `mod tests` block so that upstream's test additions and ours
-//! never land on the same lines.
+//! never land on the same lines.`FORK.md` says why, once.
 
 use ndarray::{Array2, array};
 

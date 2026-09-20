@@ -1,7 +1,7 @@
 //! Which model files an OpenVINO deployment has to be given.
 //!
 //! Kept out of the shared `mod tests` block so that upstream's test additions and ours
-//! never land on the same lines.
+//! never land on the same lines.`FORK.md` says why, once.
 
 use super::required_files;
 use crate::inference::ExecutionMode;

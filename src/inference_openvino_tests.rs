@@ -2,7 +2,7 @@
 //! `openvino` feature refuses.
 //!
 //! Kept out of the shared `mod tests` block so that upstream's test additions and ours
-//! never land on the same lines -- that block is now byte-identical to upstream's.
+//! never land on the same lines -- that block is now byte-identical to upstream's.`FORK.md` says why, once.
 //!
 //! The import below is unconditional on purpose: the tests asserting what an empty device
 //! string does run on every build, so guarding it the way the shared block guards its own

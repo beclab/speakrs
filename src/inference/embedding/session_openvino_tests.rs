@@ -1,7 +1,7 @@
 //! Which execution modes ask the embedding session for a precision override.
 //!
 //! Kept out of the shared `mod tests` block so that upstream's test additions and ours
-//! never land on the same lines. See CONTRIBUTING notes on staying mergeable with upstream.
+//! never land on the same lines. `FORK.md` says why, once.
 
 use super::*;
 

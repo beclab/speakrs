@@ -2,7 +2,7 @@
 //! `HETERO`, `BATCH` and a device index are interpreted.
 //!
 //! Its own file so that upstream's edits to `inference.rs` and ours do not land on the same
-//! lines. Upstream has changed that file four times since the fork point; this fork adds a
+//! lines. `FORK.md` says why, once. Upstream has changed that file four times since the fork point; this fork adds a
 //! backend to it, and the two only have to meet at the enum variant and its match arms.
 
 use super::ExecutionMode;

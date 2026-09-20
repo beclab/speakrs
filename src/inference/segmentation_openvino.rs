@@ -2,7 +2,7 @@
 //! allowed to carry on without one.
 //!
 //! Its own file so that upstream's edits to `segmentation.rs` and ours do not land on the
-//! same lines. What has to stay there is the call site inside `with_mode`.
+//! same lines. `FORK.md` says why, once. What has to stay there is the call site inside `with_mode`.
 
 use std::path::{Path, PathBuf};
 

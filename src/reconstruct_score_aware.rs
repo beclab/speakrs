@@ -1,7 +1,7 @@
 //! Exclusive reconstruction that reads frame support instead of the binary mask.
 //!
 //! Its own file, not a block inside `reconstruct.rs`, so that upstream's edits to that
-//! file and ours never land on the same lines. Upstream answers the same question with
+//! file and ours never land on the same lines. `FORK.md` says why, once. Upstream answers the same question with
 //! `ExclusiveDiarization::from_scored`, one frame at a time; this one resolves a run of
 //! frames together so that equal support does not make the speaker flicker.
 
