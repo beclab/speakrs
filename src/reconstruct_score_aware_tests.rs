@@ -6,6 +6,7 @@
 use ndarray::{Array2, array};
 
 use super::*;
+use crate::pipeline::ExclusiveFrameDecision;
 
 #[test]
 fn score_aware_exclusive_uses_unique_support() {
