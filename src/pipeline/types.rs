@@ -2,12 +2,12 @@ mod data;
 mod error;
 mod extract;
 mod layout;
+mod score_aware;
 
 pub(crate) use data::FrameActivations;
 pub use data::{
     BatchInput, ChunkEmbeddings, ChunkSpeakerClusters, DecodedSegmentations, DiarizationResult,
-    DiscreteDiarization, ExclusiveFrameDecision, ExclusiveFrameEvidence, FrameSpeakerSupport,
-    InferenceArtifacts, ScoreAwareExclusiveDiarization, SpeakerCountTrack,
+    DiscreteDiarization, InferenceArtifacts, SpeakerCountTrack,
 };
 pub(super) use data::{
     EmbeddingPath, InferencePath, PendingEmbedding, PendingSplitEmbedding, RawSegmentationWindows,
@@ -17,3 +17,8 @@ pub(super) use extract::{Array3Writer, EmbeddingStorage, flush_masked, flush_spl
 pub(super) use layout::{ChunkLayout, chunk_audio_raw};
 #[cfg(test)]
 pub(super) use layout::{chunk_start_frames, total_output_frames};
+
+pub use score_aware::{
+    ExclusiveFrameDecision, ExclusiveFrameEvidence, FrameSpeakerSupport,
+    ScoreAwareExclusiveDiarization,
+};
