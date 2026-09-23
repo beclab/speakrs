@@ -22,9 +22,11 @@ use types::{ChunkLayout, EmbeddingPath, InferencePath, RawSegmentationWindows};
 use types::{chunk_audio_raw, chunk_start_frames, total_output_frames};
 
 pub(crate) mod clustering;
+mod speaker_count;
 #[cfg(test)]
 use clustering::mark_inactive_speakers;
 pub(crate) use clustering::{clean_masks, select_speaker_weights, write_speaker_mask_to_slice};
+pub use speaker_count::SpeakerCount;
 
 mod concurrent;
 use concurrent::ConcurrentEmbeddingRunner;

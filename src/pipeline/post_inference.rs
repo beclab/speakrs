@@ -41,6 +41,7 @@ pub fn post_inference(
         });
     }
 
+    let speaker_count = config.speaker_count.cap(speaker_count);
     let training_embeddings = embeddings.training_set(&segmentations);
     let hard_clusters = training_embeddings.cluster(&segmentations, &embeddings, plda, config);
 

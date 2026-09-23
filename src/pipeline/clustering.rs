@@ -123,7 +123,13 @@ impl TrainingEmbeddings {
             debug!(cluster = cluster_idx, norm, "centroid");
         }
 
-        let mut clusters = assign_chunk_embeddings(segmentations, embeddings, &centroids);
+        let mut clusters = super::speaker_count::assign(
+            segmentations,
+            embeddings,
+            &self.0,
+            centroids,
+            &config.speaker_count,
+        );
         mark_inactive_speakers(&segmentations.0, &mut clusters);
         debug!(
             rows = clusters.nrows(),

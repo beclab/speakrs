@@ -245,6 +245,7 @@ pub use models::ModelBundle;
 #[cfg(feature = "online")]
 #[cfg_attr(docsrs, doc(cfg(feature = "online")))]
 pub use models::ModelManager;
+pub use pipeline::SpeakerCount;
 pub use pipeline::{
     AhcConfig, BatchInput, BinarizeConfig, DiarizationPipeline, DiarizationResult,
     OwnedDiarizationPipeline, PipelineBuilder, PipelineConfig, PipelineError, QueueError,

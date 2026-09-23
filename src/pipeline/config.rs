@@ -1,6 +1,7 @@
 #[cfg(feature = "coreml")]
 use crate::inference::CoreMlComputeUnits;
 use crate::inference::ExecutionMode;
+use crate::pipeline::SpeakerCount;
 use crate::pipeline::{AhcConfig, BinarizeConfig, VbxConfig};
 
 /// How to map cluster assignments back to per-frame speaker activations
@@ -31,6 +32,8 @@ pub struct PipelineConfig {
     pub speaker_keep_threshold: f64,
     /// Strategy for mapping clusters back to frame activations
     pub reconstruct_method: ReconstructMethod,
+    /// Bounds on how many speakers the output may contain; unconstrained by default
+    pub speaker_count: SpeakerCount,
 }
 
 impl Default for PipelineConfig {
@@ -42,6 +45,7 @@ impl Default for PipelineConfig {
             merge_gap: 0.0,
             speaker_keep_threshold: 1e-7,
             reconstruct_method: ReconstructMethod::Smoothed { epsilon: 0.1 },
+            speaker_count: SpeakerCount::default(),
         }
     }
 }
